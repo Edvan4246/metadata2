@@ -1,0 +1,10 @@
+{
+  "name": "SuperCar #2",
+  "description": "Outro carro NFT incrível para o jogo MetaRacers.",
+  "image": "https://example.com/images/supercar2.png",
+  "attributes": [
+    { "trait_type": "Velocidade", "value": "350 km/h" },
+    { "trait_type": "Aceleração", "value": "2.8s (0-100 km/h)" },
+    { "trait_type": "Nitro", "value": "Habilitado" }
+  ]
+}
