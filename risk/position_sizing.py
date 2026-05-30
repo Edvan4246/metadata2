@@ -2,26 +2,51 @@
 Position sizing strategies.
 
 Default: fixed-fractional risk model (risk X% of equity per trade).
-SL distance in price → lot size calculation via pip value.
+SL distance in price → lot size calculation via pip/point value.
+
+Supports forex pairs, gold (XAUUSD), and indices (US100, US30).
 
 Formula:
-  risk_amount = equity * risk_pct
-  pip_value   = (pip_size / price) * lot_size * contract_size
-  lots = risk_amount / (sl_pips * pip_value_per_lot)
+  risk_amount      = equity * risk_pct
+  pip_value_per_lot = point_size * contract_size  (or dynamic for JPY)
+  lots = risk_amount / (sl_points * pip_value_per_lot)
 """
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Standard contract sizes and pip sizes per symbol group
-PIP_SIZE = {
-    "USDJPY": 0.01, "EURJPY": 0.01, "GBPJPY": 0.01,
-    "AUDJPY": 0.01, "CADJPY": 0.01, "CHFJPY": 0.01,
+# Per-instrument specs: (point_size, pip_value_per_lot_USD)
+# pip_value_per_lot = USD earned/lost per 1 point move on 1.0 lot
+# For JPY pairs pip_value_per_lot is None → computed dynamically from price
+INSTRUMENT_SPECS: dict[str, tuple[float, float | None]] = {
+    # Forex — JPY pairs (dynamic pip value)
+    "USDJPY": (0.01,    None),
+    "EURJPY": (0.01,    None),
+    "GBPJPY": (0.01,    None),
+    "AUDJPY": (0.01,    None),
+    "CADJPY": (0.01,    None),
+    "CHFJPY": (0.01,    None),
+    "NZDJPY": (0.01,    None),
+    # Metals
+    "XAUUSD": (0.01,    1.0),    # Gold: 1 lot=100oz, $0.01 move = $1
+    "XAGUSD": (0.001,   50.0),   # Silver
+    # US Indices (retail standard: 1 lot = 1 contract, $1/point)
+    # Note: multiply pip_value_per_lot by your broker's contract multiplier if needed
+    "US100":  (1.0,     1.0),    # Nasdaq 100
+    "US30":   (1.0,     1.0),    # Dow Jones 30
+    "US500":  (1.0,     1.0),    # S&P 500
+    # EU/UK Indices
+    "GER40":  (1.0,     1.0),    # DAX 40
+    "UK100":  (1.0,     1.0),    # FTSE 100
+    # Crypto CFDs
+    "BTCUSD": (1.0,     1.0),
+    "ETHUSD": (0.01,    1.0),
 }
-DEFAULT_PIP_SIZE = 0.0001
 
-CONTRACT_SIZE = 100_000   # standard lot
+# Default for unlisted forex pairs
+_DEFAULT_SPEC: tuple[float, float | None] = (0.0001, 10.0)  # 1 pip = $10/lot
+_FOREX_CONTRACT_SIZE = 100_000
+
 MIN_LOT = 0.01
 MAX_LOT = 10.0
 
@@ -35,28 +60,28 @@ def calculate_lot_size(
     min_lot: float = MIN_LOT,
     max_lot: float = MAX_LOT,
 ) -> float:
-    pip_size = PIP_SIZE.get(symbol[:6].upper(), DEFAULT_PIP_SIZE)
-    sl_distance = abs(entry - sl)
-    sl_pips = sl_distance / pip_size
+    sym = symbol.upper().replace(".", "").replace("-", "")
+    point_size, pip_value_per_lot = INSTRUMENT_SPECS.get(sym, _DEFAULT_SPEC)
 
-    if sl_pips <= 0:
+    sl_distance = abs(entry - sl)
+    sl_points = sl_distance / point_size
+
+    if sl_points <= 0:
         logger.warning("SL distance is zero for %s — using min lot", symbol)
         return min_lot
 
     risk_amount = equity * risk_pct
 
-    # Pip value per 1.0 lot in account currency (approx for USD accounts)
-    if symbol.endswith("JPY"):
-        pip_value_per_lot = (pip_size / entry) * CONTRACT_SIZE
-    else:
-        pip_value_per_lot = pip_size * CONTRACT_SIZE
+    # JPY pairs: pip value depends on current price
+    if pip_value_per_lot is None:
+        pip_value_per_lot = (point_size / entry) * _FOREX_CONTRACT_SIZE
 
-    lots = risk_amount / (sl_pips * pip_value_per_lot)
+    lots = risk_amount / (sl_points * pip_value_per_lot)
     lots = max(min_lot, min(max_lot, round(lots, 2)))
 
     logger.debug(
-        "%s sizing: equity=%.2f risk=%.1f%% sl_pips=%.1f → lots=%.2f",
-        symbol, equity, risk_pct * 100, sl_pips, lots,
+        "%s sizing: equity=%.2f risk=%.1f%% sl_pts=%.1f pip_val=%.2f → lots=%.2f",
+        symbol, equity, risk_pct * 100, sl_points, pip_value_per_lot, lots,
     )
     return lots
 

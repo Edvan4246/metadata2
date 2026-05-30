@@ -39,12 +39,40 @@ class SignalResult:
     reason: str
 
 
+# Per-symbol max spread thresholds (in broker points).
+# Indices and metals have wider spreads than standard forex pairs.
+MAX_SPREAD_BY_SYMBOL: dict[str, int] = {
+    "XAUUSD": 80,    # Gold — typical spread $0.30–0.80
+    "XAGUSD": 120,
+    "US100":  5,     # Nasdaq — typically 1–3 points
+    "US30":   8,     # Dow Jones — typically 2–5 points
+    "US500":  5,
+    "GER40":  5,
+    "UK100":  8,
+    "BTCUSD": 200,
+    "ETHUSD": 50,
+}
+DEFAULT_MAX_SPREAD = 30   # forex pairs
+
+# Price rounding per instrument (decimal places for SL/TP)
+PRICE_DECIMALS: dict[str, int] = {
+    "XAUUSD": 2,
+    "US100":  1,
+    "US30":   1,
+    "US500":  1,
+    "GER40":  1,
+    "UK100":  1,
+    "BTCUSD": 2,
+}
+DEFAULT_PRICE_DECIMALS = 5
+
+
 class SignalGenerator:
     def __init__(
         self,
         client: MT5Client,
         models: Dict[str, ForexMLModel],
-        max_spread: int = 30,
+        max_spread: int = DEFAULT_MAX_SPREAD,
         atr_sl_mult: float = 1.5,
         atr_tp_mult: float = 2.5,
     ):
@@ -53,6 +81,12 @@ class SignalGenerator:
         self.max_spread = max_spread
         self.atr_sl_mult = atr_sl_mult
         self.atr_tp_mult = atr_tp_mult
+
+    def _max_spread(self, symbol: str) -> int:
+        return MAX_SPREAD_BY_SYMBOL.get(symbol.upper(), self.max_spread)
+
+    def _price_decimals(self, symbol: str) -> int:
+        return PRICE_DECIMALS.get(symbol.upper(), DEFAULT_PRICE_DECIMALS)
 
     def generate(self, symbol: str, ohlcv: Dict[str, pd.DataFrame]) -> SignalResult:
         tick = self.client.get_tick(symbol)
@@ -69,9 +103,10 @@ class SignalGenerator:
         if "M5" not in ohlcv or "H1" not in ohlcv or "H4" not in ohlcv:
             return null_signal
 
-        # Spread filter
-        if spread > self.max_spread:
-            null_signal.reason = f"spread_too_high({spread})"
+        # Per-symbol spread filter
+        symbol_max_spread = self._max_spread(symbol)
+        if spread > symbol_max_spread:
+            null_signal.reason = f"spread_too_high({spread}>{symbol_max_spread})"
             return null_signal
 
         # ML prediction on M5
@@ -127,12 +162,13 @@ class SignalGenerator:
             )
 
         # Compute SL/TP using ATR
+        decimals = self._price_decimals(symbol)
         if ml_signal == 1:
-            sl = entry - self.atr_sl_mult * atr_val
-            tp = entry + self.atr_tp_mult * atr_val
+            sl = round(entry - self.atr_sl_mult * atr_val, decimals)
+            tp = round(entry + self.atr_tp_mult * atr_val, decimals)
         else:
-            sl = entry + self.atr_sl_mult * atr_val
-            tp = entry - self.atr_tp_mult * atr_val
+            sl = round(entry + self.atr_sl_mult * atr_val, decimals)
+            tp = round(entry - self.atr_tp_mult * atr_val, decimals)
 
         final_confidence = ml_conf * (1.1 if h1_trend == ml_signal else 1.0)
         final_confidence = min(final_confidence, 1.0)
@@ -148,7 +184,7 @@ class SignalGenerator:
             spread=spread,
             atr=atr_val,
             entry_price=entry,
-            sl=round(sl, 5),
-            tp=round(tp, 5),
+            sl=sl,
+            tp=tp,
             reason="signal_confirmed",
         )

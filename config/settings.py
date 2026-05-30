@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     mt5_server: str = Field(default="MetaQuotes-Demo", alias="MT5_SERVER")
 
     # Trading
-    symbols: List[str] = Field(default=["EURUSD", "GBPUSD", "USDJPY"], alias="SYMBOLS")
+    symbols: List[str] = Field(
+        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "US100", "US30"],
+        alias="SYMBOLS",
+    )
     magic_number: int = Field(default=20240101, alias="MAGIC_NUMBER")
     lot_size: float = Field(default=0.01, alias="LOT_SIZE")
 

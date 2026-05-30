@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from strategy.indicators import add_all_indicators
+from risk.position_sizing import INSTRUMENT_SPECS, _DEFAULT_SPEC, _FOREX_CONTRACT_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +153,17 @@ class BacktestEngine:
         return None, ""
 
     def _calc_pnl(self, trade: Trade, exit_price: float) -> float:
-        pip_value = trade.volume * 10  # ~$10/pip for standard account
-        pips = (exit_price - trade.entry_price) * 10000 * trade.direction
-        return pips * pip_value - self.commission_per_lot * trade.volume
+        sym = trade.symbol.upper().replace(".", "").replace("-", "")
+        point_size, pip_val = INSTRUMENT_SPECS.get(sym, _DEFAULT_SPEC)
+
+        # For JPY pairs pip_val is None → compute dynamically from entry price
+        if pip_val is None:
+            pip_val = (point_size / trade.entry_price) * _FOREX_CONTRACT_SIZE
+
+        points = (exit_price - trade.entry_price) / point_size * trade.direction
+        gross = points * pip_val * trade.volume
+        commission = self.commission_per_lot * trade.volume
+        return gross - commission
 
     def _compute_metrics(self, trades: List[Trade], equity: np.ndarray, symbol: str) -> BacktestResult:
         if not trades:

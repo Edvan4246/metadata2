@@ -340,33 +340,74 @@ class MT5Client:
             logger.error("Unknown timeframe: %s", tf)
         return val
 
+    # Simulation specs: (base_price, M5_return_std, candle_noise_pct, spread, ask_offset, decimals)
+    # candle_noise_pct is the typical H-L range as % of price per M5 candle
+    _SIM_SPECS = {
+        # Forex
+        "EURUSD": (1.08500, 0.00030, 0.00040, 15,   0.00015, 5),
+        "GBPUSD": (1.27000, 0.00035, 0.00050, 18,   0.00018, 5),
+        "USDJPY": (149.500, 0.00030, 0.00040, 12,   0.015,   3),
+        "AUDUSD": (0.65000, 0.00028, 0.00038, 16,   0.00016, 5),
+        "USDCAD": (1.36000, 0.00025, 0.00035, 18,   0.00018, 5),
+        "USDCHF": (0.89000, 0.00025, 0.00035, 18,   0.00018, 5),
+        "NZDUSD": (0.60000, 0.00028, 0.00038, 20,   0.00020, 5),
+        "EURGBP": (0.85000, 0.00020, 0.00030, 15,   0.00015, 5),
+        "EURJPY": (161.500, 0.00035, 0.00050, 18,   0.018,   3),
+        "GBPJPY": (189.000, 0.00040, 0.00060, 25,   0.025,   3),
+        # Metals
+        "XAUUSD": (2350.00, 0.00025, 0.00060, 40,   0.40,    2),  # Gold
+        "XAGUSD": (30.000,  0.00035, 0.00080, 60,   0.030,   3),  # Silver
+        # US Indices
+        "US100":  (19200.0, 0.00040, 0.00100, 2,    1.5,     1),  # Nasdaq 100
+        "US30":   (39500.0, 0.00025, 0.00080, 3,    3.0,     1),  # Dow Jones 30
+        "US500":  (5400.0,  0.00030, 0.00090, 1,    0.8,     1),  # S&P 500
+        # EU/UK Indices
+        "GER40":  (18200.0, 0.00030, 0.00090, 2,    2.0,     1),  # DAX 40
+        "UK100":  (8200.0,  0.00025, 0.00070, 3,    1.5,     1),  # FTSE 100
+    }
+    _SIM_DEFAULT = (1.0, 0.00030, 0.00040, 15, 0.00015, 5)
+
     def _simulated_tick(self, symbol: str) -> TickInfo:
-        base = {"EURUSD": 1.08500, "GBPUSD": 1.27000, "USDJPY": 149.500,
-                "AUDUSD": 0.65000, "USDCAD": 1.36000}.get(symbol, 1.0)
-        noise = np.random.uniform(-0.0005, 0.0005)
-        bid = round(base + noise, 5)
-        ask = round(bid + 0.00015, 5)
-        return TickInfo(symbol=symbol, bid=bid, ask=ask, spread=15,
+        base, _, _, spread, ask_offset, decimals = self._SIM_SPECS.get(
+            symbol.upper(), self._SIM_DEFAULT
+        )
+        noise = np.random.uniform(-base * 0.0005, base * 0.0005)
+        bid = round(base + noise, decimals)
+        ask = round(bid + ask_offset, decimals)
+        return TickInfo(symbol=symbol, bid=bid, ask=ask, spread=spread,
                         time=pd.Timestamp.now())
 
     def _simulated_ohlcv(self, symbol: str, timeframe: str, count: int) -> pd.DataFrame:
         np.random.seed(abs(hash(symbol + timeframe)) % 2**31)
-        base = {"EURUSD": 1.085, "GBPUSD": 1.270, "USDJPY": 149.5,
-                "AUDUSD": 0.650, "USDCAD": 1.360}.get(symbol, 1.0)
+
+        base, return_std, noise_pct, _, _, decimals = self._SIM_SPECS.get(
+            symbol.upper(), self._SIM_DEFAULT
+        )
 
         minutes = self.TIMEFRAME_MAP.get(timeframe.upper(), 60)
+        # Scale volatility to timeframe (sqrt of bars per M5)
+        tf_scale = np.sqrt(max(minutes, 1) / 5)
+        scaled_std = return_std * tf_scale
+
         end = pd.Timestamp.now().floor(f"{minutes}min")
         index = pd.date_range(end=end, periods=count, freq=f"{minutes}min")
 
-        returns = np.random.normal(0, 0.0003, count)
+        returns = np.random.normal(0, scaled_std, count)
         close = base * np.exp(np.cumsum(returns))
-        noise = np.random.uniform(0.0002, 0.0008, count)
+
+        noise_abs = close * noise_pct * tf_scale
+        noise_lo = np.random.uniform(0.3, 1.0, count) * noise_abs
+        noise_hi = np.random.uniform(0.3, 1.0, count) * noise_abs
+
+        opens = np.roll(close, 1)
+        opens[0] = close[0]
+        opens = opens * (1 + np.random.uniform(-return_std, return_std, count))
 
         df = pd.DataFrame({
-            "open":   close * (1 + np.random.uniform(-0.0002, 0.0002, count)),
-            "high":   close + noise,
-            "low":    close - noise,
-            "close":  close,
+            "open":   np.round(opens, decimals),
+            "high":   np.round(close + noise_hi, decimals),
+            "low":    np.round(close - noise_lo, decimals),
+            "close":  np.round(close, decimals),
             "volume": np.random.randint(100, 5000, count).astype(float),
         }, index=index)
         return df

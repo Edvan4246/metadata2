@@ -20,7 +20,7 @@ from backtesting.engine import BacktestEngine
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("backtest")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "XAUUSD", "US100", "US30"]
 CONFIDENCE_THRESHOLD = 0.50
 
 client = MT5Client(login=0, password="", server="")

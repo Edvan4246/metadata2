@@ -89,3 +89,20 @@ class TestPositionSizing:
     def test_jpy_pair_sizing(self):
         lot = calculate_lot_size(10000, 0.02, 149.500, 149.000, "USDJPY")
         assert lot >= 0.01
+
+    def test_gold_sizing(self):
+        # XAUUSD: entry=2350, SL=2335 → 15 points * $1/point/lot = $15 risk/lot
+        lot = calculate_lot_size(10000, 0.02, 2350.0, 2335.0, "XAUUSD")
+        assert lot >= 0.01
+        assert lot <= 10.0
+
+    def test_us100_sizing(self):
+        # US100: entry=19200, SL=19150 → 50 points * $1/point/lot = $50 risk/lot
+        lot = calculate_lot_size(10000, 0.02, 19200.0, 19150.0, "US100")
+        assert lot >= 0.01
+        assert lot <= 10.0
+
+    def test_us30_sizing(self):
+        lot = calculate_lot_size(10000, 0.02, 39500.0, 39400.0, "US30")
+        assert lot >= 0.01
+        assert lot <= 10.0
