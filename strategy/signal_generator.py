@@ -1,0 +1,154 @@
+"""
+Signal generator — combines ML predictions with rule-based multi-timeframe
+confirmation to produce high-confidence trade signals.
+
+Signal flow:
+  1. ML model predicts direction on M5
+  2. H1 trend filter: EMA alignment must agree
+  3. H4 regime filter: ADX > 20 (trending market)
+  4. Spread filter: reject if spread > threshold
+  5. Combine into SignalResult
+"""
+import logging
+from dataclasses import dataclass
+from typing import Optional, Dict
+
+import pandas as pd
+
+from strategy.indicators import add_all_indicators
+from strategy.ml_model import ForexMLModel
+from core.mt5_client import MT5Client
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SignalResult:
+    symbol: str
+    direction: int          # 1=BUY, -1=SELL, 0=HOLD
+    confidence: float       # 0-1
+    ml_signal: int
+    ml_confidence: float
+    h1_trend: int           # 1=up, -1=down, 0=neutral
+    h4_adx: float
+    spread: float
+    atr: float
+    entry_price: float
+    sl: float
+    tp: float
+    reason: str
+
+
+class SignalGenerator:
+    def __init__(
+        self,
+        client: MT5Client,
+        models: Dict[str, ForexMLModel],
+        max_spread: int = 30,
+        atr_sl_mult: float = 1.5,
+        atr_tp_mult: float = 2.5,
+    ):
+        self.client = client
+        self.models = models
+        self.max_spread = max_spread
+        self.atr_sl_mult = atr_sl_mult
+        self.atr_tp_mult = atr_tp_mult
+
+    def generate(self, symbol: str, ohlcv: Dict[str, pd.DataFrame]) -> SignalResult:
+        tick = self.client.get_tick(symbol)
+        entry = tick.ask if tick else 0.0
+        spread = tick.spread if tick else 999
+
+        null_signal = SignalResult(
+            symbol=symbol, direction=0, confidence=0,
+            ml_signal=0, ml_confidence=0, h1_trend=0, h4_adx=0,
+            spread=spread, atr=0, entry_price=entry,
+            sl=0, tp=0, reason="no_data",
+        )
+
+        if "M5" not in ohlcv or "H1" not in ohlcv or "H4" not in ohlcv:
+            return null_signal
+
+        # Spread filter
+        if spread > self.max_spread:
+            null_signal.reason = f"spread_too_high({spread})"
+            return null_signal
+
+        # ML prediction on M5
+        model = self.models.get(symbol)
+        ml_signal, ml_conf = (0, 0.0)
+        if model and model.is_trained:
+            ml_signal, ml_conf = model.predict(ohlcv["M5"])
+
+        if ml_signal == 0:
+            null_signal.reason = "ml_hold"
+            null_signal.ml_signal = ml_signal
+            null_signal.ml_confidence = ml_conf
+            return null_signal
+
+        # H1 trend filter
+        h1 = add_all_indicators(ohlcv["H1"])
+        last_h1 = h1.iloc[-1]
+        if last_h1["ema_8"] > last_h1["ema_21"] > last_h1["ema_50"]:
+            h1_trend = 1
+        elif last_h1["ema_8"] < last_h1["ema_21"] < last_h1["ema_50"]:
+            h1_trend = -1
+        else:
+            h1_trend = 0
+
+        # H4 regime filter
+        h4 = add_all_indicators(ohlcv["H4"])
+        h4_adx = float(h4["adx"].iloc[-1]) if not pd.isna(h4["adx"].iloc[-1]) else 0
+
+        # M5 ATR for SL/TP
+        m5 = add_all_indicators(ohlcv["M5"])
+        atr_val = float(m5["atr"].iloc[-1]) if not pd.isna(m5["atr"].iloc[-1]) else 0
+
+        # Confluence check
+        trend_agrees = (h1_trend == ml_signal) or (h1_trend == 0)
+        adx_ok = h4_adx >= 18
+
+        if not trend_agrees:
+            return SignalResult(
+                symbol=symbol, direction=0, confidence=0,
+                ml_signal=ml_signal, ml_confidence=ml_conf,
+                h1_trend=h1_trend, h4_adx=h4_adx,
+                spread=spread, atr=atr_val, entry_price=entry,
+                sl=0, tp=0, reason="h1_trend_conflict",
+            )
+
+        if not adx_ok:
+            return SignalResult(
+                symbol=symbol, direction=0, confidence=0,
+                ml_signal=ml_signal, ml_confidence=ml_conf,
+                h1_trend=h1_trend, h4_adx=h4_adx,
+                spread=spread, atr=atr_val, entry_price=entry,
+                sl=0, tp=0, reason=f"adx_too_low({h4_adx:.1f})",
+            )
+
+        # Compute SL/TP using ATR
+        if ml_signal == 1:
+            sl = entry - self.atr_sl_mult * atr_val
+            tp = entry + self.atr_tp_mult * atr_val
+        else:
+            sl = entry + self.atr_sl_mult * atr_val
+            tp = entry - self.atr_tp_mult * atr_val
+
+        final_confidence = ml_conf * (1.1 if h1_trend == ml_signal else 1.0)
+        final_confidence = min(final_confidence, 1.0)
+
+        return SignalResult(
+            symbol=symbol,
+            direction=ml_signal,
+            confidence=final_confidence,
+            ml_signal=ml_signal,
+            ml_confidence=ml_conf,
+            h1_trend=h1_trend,
+            h4_adx=h4_adx,
+            spread=spread,
+            atr=atr_val,
+            entry_price=entry,
+            sl=round(sl, 5),
+            tp=round(tp, 5),
+            reason="signal_confirmed",
+        )

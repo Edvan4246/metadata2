@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forex Bot Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117; --surface: #161b22; --border: #30363d;
+      --text: #e6edf3; --muted: #8b949e;
+      --green: #3fb950; --red: #f85149; --yellow: #d29922;
+      --blue: #58a6ff; --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 600; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+    .status-dot.active { background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+    .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge.running { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+    .badge.halted  { background: rgba(248,81,73,.15); color: var(--red);   border: 1px solid rgba(248,81,73,.3); }
+
+    main { padding: 24px; display: grid; gap: 20px; }
+
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+    .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+
+    .metric-value { font-size: 28px; font-weight: 700; }
+    .metric-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .pos-green { color: var(--green); }
+    .pos-red   { color: var(--red); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid rgba(48,54,61,.5); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    .dir-buy  { color: var(--green); font-weight: 600; }
+    .dir-sell { color: var(--red);   font-weight: 600; }
+    .dir-hold { color: var(--muted); }
+
+    .signal-bar { height: 4px; border-radius: 2px; background: var(--border); margin-top: 4px; }
+    .signal-fill { height: 100%; border-radius: 2px; background: var(--blue); }
+
+    .log-box { background: #010409; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; height: 160px; overflow-y: auto; font-family: monospace; font-size: 12px; color: var(--muted); }
+    .log-box p { margin-bottom: 4px; }
+    .log-box p.warn { color: var(--yellow); }
+    .log-box p.err  { color: var(--red); }
+    .log-box p.ok   { color: var(--green); }
+
+    .btn { padding: 8px 20px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
+    .btn:hover { background: var(--border); }
+    .btn.danger { border-color: var(--red); color: var(--red); }
+    .btn.danger:hover { background: rgba(248,81,73,.1); }
+
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    footer { text-align: center; padding: 20px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot" id="dot"></div>
+  <h1>Forex Trading Bot</h1>
+  <span class="badge" id="bot-status-badge">Conectando…</span>
+  <span style="margin-left:auto; color:var(--muted); font-size:12px;" id="last-update">—</span>
+</header>
+
+<main>
+  <!-- Account KPIs -->
+  <div class="grid-3">
+    <div class="card">
+      <h2>Saldo</h2>
+      <div class="metric-value" id="balance">—</div>
+      <div class="metric-label" id="currency">USD</div>
+    </div>
+    <div class="card">
+      <h2>Equity</h2>
+      <div class="metric-value" id="equity">—</div>
+      <div class="metric-label">Valor líquido</div>
+    </div>
+    <div class="card">
+      <h2>Margem Livre</h2>
+      <div class="metric-value" id="free-margin">—</div>
+      <div class="metric-label">Disponível</div>
+    </div>
+    <div class="card">
+      <h2>P&amp;L Diário</h2>
+      <div class="metric-value" id="daily-pnl">—</div>
+      <div class="metric-label" id="daily-trades">0 trades hoje</div>
+    </div>
+    <div class="card">
+      <h2>Ciclo</h2>
+      <div class="metric-value" id="cycle">0</div>
+      <div class="metric-label">Iterações do bot</div>
+    </div>
+    <div class="card">
+      <h2>Risk Status</h2>
+      <div class="metric-value" id="risk-status" style="font-size:20px">OK</div>
+      <div class="metric-label" id="risk-reason">—</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card">
+    <h2>Controles</h2>
+    <div class="controls">
+      <button class="btn" onclick="apiCall('POST','/api/stop')">Parar Bot</button>
+      <button class="btn" onclick="apiCall('POST','/api/start')">Iniciar Bot</button>
+      <button class="btn" onclick="apiCall('POST','/api/retrain')">Retreinar Modelos</button>
+      <button class="btn" onclick="apiCall('POST','/api/risk/resume')">Resetar Risk</button>
+      <button class="btn danger" onclick="if(confirm('Fechar todas as posições?')) apiCall('POST','/api/close-all')">Fechar Tudo</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Open Positions -->
+    <div class="card">
+      <h2>Posições Abertas</h2>
+      <table>
+        <thead><tr>
+          <th>Par</th><th>Dir</th><th>Lotes</th><th>Aberto</th><th>Atual</th><th>P&amp;L</th>
+        </tr></thead>
+        <tbody id="positions-body">
+          <tr><td colspan="6" style="color:var(--muted);text-align:center">Nenhuma posição aberta</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Signals -->
+    <div class="card">
+      <h2>Sinais em Tempo Real</h2>
+      <table>
+        <thead><tr>
+          <th>Par</th><th>Direção</th><th>Conf.</th><th>ADX H4</th><th>Motivo</th>
+        </tr></thead>
+        <tbody id="signals-body">
+          <tr><td colspan="5" style="color:var(--muted);text-align:center">Aguardando dados…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h2>Log de Eventos</h2>
+    <div class="log-box" id="log-box"></div>
+  </div>
+</main>
+
+<footer>Forex Bot Dashboard — dados em tempo real via WebSocket</footer>
+
+<script>
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const fmt = (v, d=2) => (v != null ? v.toFixed(d) : '—');
+  const fmtCcy = (v, cur='USD') => v != null ? `${cur} ${v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—';
+
+  ws.onopen = () => log('WebSocket conectado', 'ok');
+  ws.onclose = () => { log('WebSocket desconectado — reconectando…', 'warn'); setTimeout(()=>location.reload(), 5000); };
+  ws.onerror = () => log('Erro no WebSocket', 'err');
+
+  ws.onmessage = e => {
+    try { render(JSON.parse(e.data)); } catch(err) { log('Erro ao parsear: '+err,'err'); }
+  };
+
+  function render(s) {
+    // Header
+    const running = s.running;
+    document.getElementById('dot').className = 'status-dot' + (running?' active':'');
+    const badge = document.getElementById('bot-status-badge');
+    badge.textContent = running ? 'Rodando' : 'Parado';
+    badge.className = 'badge ' + (running ? 'running' : 'halted');
+    document.getElementById('last-update').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+    document.getElementById('cycle').textContent = s.cycle ?? 0;
+
+    // Account
+    const acc = s.account || {};
+    const cur = acc.currency || 'USD';
+    document.getElementById('balance').textContent = fmtCcy(acc.balance, cur);
+    document.getElementById('equity').textContent = fmtCcy(acc.equity, cur);
+    document.getElementById('free-margin').textContent = fmtCcy(acc.free_margin, cur);
+    document.getElementById('currency').textContent = cur;
+
+    // Risk
+    const risk = s.risk || {};
+    const pnl = risk.daily_pnl ?? 0;
+    const pnlEl = document.getElementById('daily-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl);
+    pnlEl.className = 'metric-value ' + (pnl >= 0 ? 'pos-green' : 'pos-red');
+    document.getElementById('daily-trades').textContent = `${risk.daily_trades ?? 0} trades hoje`;
+    document.getElementById('risk-status').textContent = risk.halted ? 'HALT' : 'OK';
+    document.getElementById('risk-status').className = 'metric-value ' + (risk.halted ? 'pos-red' : 'pos-green');
+    document.getElementById('risk-reason').textContent = risk.halt_reason || 'Sistema normal';
+
+    // Positions
+    const tbody = document.getElementById('positions-body');
+    const positions = s.positions || [];
+    if (!positions.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center">Nenhuma posição aberta</td></tr>';
+    } else {
+      tbody.innerHTML = positions.map(p => {
+        const pnlClass = p.profit >= 0 ? 'pos-green' : 'pos-red';
+        const dirClass = p.type === 'buy' ? 'dir-buy' : 'dir-sell';
+        return `<tr>
+          <td><strong>${p.symbol}</strong></td>
+          <td class="${dirClass}">${p.type.toUpperCase()}</td>
+          <td>${fmt(p.volume,2)}</td>
+          <td>${fmt(p.open,5)}</td>
+          <td>${fmt(p.current,5)}</td>
+          <td class="${pnlClass}">${p.profit >= 0?'+':''}${fmt(p.profit,2)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Signals
+    const sbody = document.getElementById('signals-body');
+    const signals = s.signals || {};
+    const sigEntries = Object.entries(signals);
+    if (!sigEntries.length) {
+      sbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">Aguardando dados…</td></tr>';
+    } else {
+      sbody.innerHTML = sigEntries.map(([sym, sig]) => {
+        const dirLabel = sig.direction === 1 ? 'BUY' : sig.direction === -1 ? 'SELL' : 'HOLD';
+        const dirClass = sig.direction === 1 ? 'dir-buy' : sig.direction === -1 ? 'dir-sell' : 'dir-hold';
+        const conf = (sig.confidence * 100).toFixed(0);
+        return `<tr>
+          <td><strong>${sym}</strong></td>
+          <td class="${dirClass}">${dirLabel}</td>
+          <td>
+            <span>${conf}%</span>
+            <div class="signal-bar"><div class="signal-fill" style="width:${conf}%"></div></div>
+          </td>
+          <td>${fmt(sig.h4_adx,1)}</td>
+          <td style="color:var(--muted);font-size:12px">${sig.reason}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  function log(msg, cls='') {
+    const box = document.getElementById('log-box');
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = `[${new Date().toLocaleTimeString('pt-BR')}] ${msg}`;
+    box.prepend(p);
+    while (box.children.length > 100) box.removeChild(box.lastChild);
+  }
+
+  async function apiCall(method, path) {
+    try {
+      const r = await fetch(path, { method });
+      const data = await r.json();
+      log(`${method} ${path} → ${JSON.stringify(data)}`, r.ok ? 'ok' : 'err');
+    } catch(e) {
+      log(`Erro: ${e.message}`, 'err');
+    }
+  }
+</script>
+</body>
+</html>
