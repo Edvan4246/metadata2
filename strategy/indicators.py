@@ -114,8 +114,28 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_feature_columns() -> list:
-    return [
+def add_lag_features(df: pd.DataFrame, lags: list = None) -> pd.DataFrame:
+    """Add lagged close returns and RSI — gives tree models temporal memory."""
+    df = df.copy()
+    if lags is None:
+        lags = [1, 2, 3, 5, 8, 13]
+    for lag in lags:
+        df[f"close_lag_{lag}"]  = df["close"].shift(lag)
+        df[f"ret_lag_{lag}"]    = df["close"].pct_change(lag).shift(1)
+        df[f"rsi_lag_{lag}"]    = df["rsi"].shift(lag) if "rsi" in df.columns else np.nan
+    # Rolling statistics (short window)
+    df["roll_mean_5"]  = df["close"].rolling(5).mean()
+    df["roll_std_5"]   = df["close"].rolling(5).std()
+    df["roll_mean_10"] = df["close"].rolling(10).mean()
+    df["roll_std_10"]  = df["close"].rolling(10).std()
+    # Normalise lags against current price so features are scale-invariant
+    for lag in lags:
+        df[f"close_lag_{lag}"] = (df[f"close_lag_{lag}"] - df["close"]) / df["close"]
+    return df
+
+
+def get_feature_columns(with_lags: bool = True) -> list:
+    base = [
         "ema_8", "ema_21", "ema_50",
         "rsi", "rsi_6",
         "macd", "macd_signal", "macd_hist",
@@ -125,3 +145,11 @@ def get_feature_columns() -> list:
         "body", "upper_wick", "lower_wick", "candle_dir",
         "ret_1", "ret_3", "ret_10",
     ]
+    if with_lags:
+        lags = [1, 2, 3, 5, 8, 13]
+        lag_cols = []
+        for lag in lags:
+            lag_cols += [f"close_lag_{lag}", f"ret_lag_{lag}", f"rsi_lag_{lag}"]
+        lag_cols += ["roll_mean_5", "roll_std_5", "roll_mean_10", "roll_std_10"]
+        return base + lag_cols
+    return base

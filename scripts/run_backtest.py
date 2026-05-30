@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 
 from core.mt5_client import MT5Client
-from strategy.indicators import add_all_indicators, get_feature_columns
+from strategy.indicators import add_all_indicators, add_lag_features, get_feature_columns
 from strategy.ml_model import ForexMLModel
 from backtesting.engine import BacktestEngine
 
@@ -43,7 +43,8 @@ for symbol in SYMBOLS:
     # Vectorized signal generation on test set (last 30%)
     test_df = df.iloc[split:].copy()
     enriched = add_all_indicators(test_df)
-    feat_cols = get_feature_columns()
+    enriched = add_lag_features(enriched)
+    feat_cols = [c for c in get_feature_columns(with_lags=True) if c in enriched.columns]
 
     valid_rows = enriched[feat_cols].dropna()
     if valid_rows.empty or not model.is_trained:
@@ -51,16 +52,24 @@ for symbol in SYMBOLS:
         continue
 
     X = model.scaler.transform(valid_rows.values)
-    rf_proba = model.rf.predict_proba(X)
-    gb_proba = model.gb.predict_proba(X)
-    avg_proba = (rf_proba + gb_proba) / 2
-    classes = model.rf.classes_
 
-    best_idx = np.argmax(avg_proba, axis=1)
-    raw_signals = classes[best_idx]
-    confidence = avg_proba[np.arange(len(avg_proba)), best_idx]
+    # XGBoost + LightGBM + RF ensemble (labels mapped: 0→-1, 1→0, 2→+1)
+    y_map_inv = {0: -1, 1: 0, 2: 1}
+    xgb_p = model.xgb_model.predict_proba(X)
+    lgb_p = model.lgb_model.predict_proba(X)
 
-    # Apply confidence threshold and neutral filter
+    rf_raw = model.rf_model.predict_proba(X)
+    rf_classes = model.rf_model.classes_
+    rf_p = np.zeros((len(X), 3))
+    for i, cls in enumerate(rf_classes):
+        col = {-1: 0, 0: 1, 1: 2}.get(int(cls), 1)
+        rf_p[:, col] = rf_raw[:, i]
+
+    avg_proba = (xgb_p + lgb_p + rf_p) / 3
+    best_idx   = np.argmax(avg_proba, axis=1)
+    raw_signals = np.array([y_map_inv[i] for i in best_idx])
+    confidence  = avg_proba[np.arange(len(avg_proba)), best_idx]
+
     signals_filtered = np.where(
         (raw_signals != 0) & (confidence >= CONFIDENCE_THRESHOLD),
         raw_signals,

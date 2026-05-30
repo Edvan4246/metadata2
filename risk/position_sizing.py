@@ -51,15 +51,28 @@ MIN_LOT = 0.01
 MAX_LOT = 10.0
 
 
+def adaptive_risk_pct(base_risk: float, confidence: float) -> float:
+    """Scale risk between 0.75× and 1.5× base based on ML confidence."""
+    if confidence >= 0.75:
+        return base_risk * 1.5    # high confidence → bigger size
+    if confidence >= 0.65:
+        return base_risk * 1.2
+    if confidence >= 0.55:
+        return base_risk * 1.0
+    return base_risk * 0.75       # low confidence → smaller size
+
+
 def calculate_lot_size(
     equity: float,
     risk_pct: float,
     entry: float,
     sl: float,
     symbol: str,
+    confidence: float = 0.60,
     min_lot: float = MIN_LOT,
     max_lot: float = MAX_LOT,
 ) -> float:
+    risk_pct = adaptive_risk_pct(risk_pct, confidence)
     sym = symbol.upper().replace(".", "").replace("-", "")
     point_size, pip_value_per_lot = INSTRUMENT_SPECS.get(sym, _DEFAULT_SPEC)
 

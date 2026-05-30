@@ -114,9 +114,9 @@ class TradingBot:
             if signal.direction != 0:
                 self.order_mgr.process_signal(signal)
 
-            # Trailing stop maintenance
+            # Partial TP + break-even + trailing stop
             if signal.atr > 0:
-                self.order_mgr.update_trailing_stops(symbol, signal.atr)
+                self.order_mgr.manage_open_positions(symbol, signal.atr)
 
         # Broadcast state
         state = self.get_state()

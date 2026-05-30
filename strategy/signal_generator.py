@@ -1,13 +1,12 @@
 """
-Signal generator — combines ML predictions with rule-based multi-timeframe
-confirmation to produce high-confidence trade signals.
+Signal generator — routes to trend or mean-reversion strategy based on regime.
 
 Signal flow:
-  1. ML model predicts direction on M5
-  2. H1 trend filter: EMA alignment must agree
-  3. H4 regime filter: ADX > 20 (trending market)
-  4. Spread filter: reject if spread > threshold
-  5. Combine into SignalResult
+  [Session filter]  → off-hours? → skip
+  [H4 ADX]
+      ≥ 18 → Trend strategy: ML M5 + H1 EMA filter + H4 ADX filter
+      < 18 → Mean-reversion: BB touch + RSI/Stoch extremes
+  [Spread filter]   → too wide? → skip
 """
 import logging
 from dataclasses import dataclass
@@ -17,7 +16,9 @@ import pandas as pd
 
 from strategy.indicators import add_all_indicators
 from strategy.ml_model import ForexMLModel
+from strategy.mean_reversion import generate_mean_reversion_signal
 from core.mt5_client import MT5Client
+from core.session_filter import is_tradeable, session_name
 
 logger = logging.getLogger(__name__)
 
@@ -103,13 +104,37 @@ class SignalGenerator:
         if "M5" not in ohlcv or "H1" not in ohlcv or "H4" not in ohlcv:
             return null_signal
 
+        # Session filter — only trade in high-liquidity windows
+        if not is_tradeable(symbol):
+            null_signal.reason = f"off_hours({session_name()})"
+            return null_signal
+
         # Per-symbol spread filter
         symbol_max_spread = self._max_spread(symbol)
         if spread > symbol_max_spread:
             null_signal.reason = f"spread_too_high({spread}>{symbol_max_spread})"
             return null_signal
 
-        # ML prediction on M5
+        # --- Regime detection via H4 ADX ---
+        h4 = add_all_indicators(ohlcv["H4"])
+        h4_adx = float(h4["adx"].iloc[-1]) if not pd.isna(h4["adx"].iloc[-1]) else 0
+
+        # RANGING regime → mean-reversion strategy
+        if h4_adx < 18:
+            mr = generate_mean_reversion_signal(
+                symbol=symbol,
+                ohlcv=ohlcv,
+                entry_price=entry,
+                spread=spread,
+                max_spread=symbol_max_spread,
+                price_decimals=self._price_decimals(symbol),
+            )
+            if mr is not None:
+                return mr
+            null_signal.reason = f"mr_no_signal(adx={h4_adx:.1f})"
+            return null_signal
+
+        # TRENDING regime → ML + multi-TF trend strategy
         model = self.models.get(symbol)
         ml_signal, ml_conf = (0, 0.0)
         if model and model.is_trained:
@@ -131,17 +156,12 @@ class SignalGenerator:
         else:
             h1_trend = 0
 
-        # H4 regime filter
-        h4 = add_all_indicators(ohlcv["H4"])
-        h4_adx = float(h4["adx"].iloc[-1]) if not pd.isna(h4["adx"].iloc[-1]) else 0
-
         # M5 ATR for SL/TP
         m5 = add_all_indicators(ohlcv["M5"])
         atr_val = float(m5["atr"].iloc[-1]) if not pd.isna(m5["atr"].iloc[-1]) else 0
 
-        # Confluence check
+        # Confluence check (H4 ADX already confirmed ≥ 18 above)
         trend_agrees = (h1_trend == ml_signal) or (h1_trend == 0)
-        adx_ok = h4_adx >= 18
 
         if not trend_agrees:
             return SignalResult(
@@ -150,15 +170,6 @@ class SignalGenerator:
                 h1_trend=h1_trend, h4_adx=h4_adx,
                 spread=spread, atr=atr_val, entry_price=entry,
                 sl=0, tp=0, reason="h1_trend_conflict",
-            )
-
-        if not adx_ok:
-            return SignalResult(
-                symbol=symbol, direction=0, confidence=0,
-                ml_signal=ml_signal, ml_confidence=ml_conf,
-                h1_trend=h1_trend, h4_adx=h4_adx,
-                spread=spread, atr=atr_val, entry_price=entry,
-                sl=0, tp=0, reason=f"adx_too_low({h4_adx:.1f})",
             )
 
         # Compute SL/TP using ATR
