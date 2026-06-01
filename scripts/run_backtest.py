@@ -23,7 +23,16 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s — %(mes
 logger = logging.getLogger("backtest")
 
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "XAUUSD", "US100", "US30"]
-CONFIDENCE_THRESHOLD = 0.50
+CONFIDENCE_THRESHOLD = 0.55   # raised from 0.50 → fewer but stronger signals
+
+# Minimum bars between signals per symbol (prevents overtrading)
+# XAUUSD/indices are more volatile → longer cooldown
+COOLDOWN_BARS: dict = {
+    "XAUUSD": 12,   # 1 trade per hour max on gold
+    "US100":  10,
+    "US30":   10,
+    "default": 6,   # 30 min on forex
+}
 
 client = MT5Client(
     login=settings.mt5_login,
@@ -88,14 +97,25 @@ for symbol in SYMBOLS:
     raw_signals = np.array([y_map_inv[i] for i in best_idx])
     confidence  = avg_proba[np.arange(len(avg_proba)), best_idx]
 
-    signals_filtered = np.where(
+    signals_raw = np.where(
         (raw_signals != 0) & (confidence >= CONFIDENCE_THRESHOLD),
         raw_signals,
         0,
     )
 
+    # Apply cooldown: suppress signals within N bars of previous signal
+    cooldown = COOLDOWN_BARS.get(symbol, COOLDOWN_BARS["default"])
+    signals_cd = signals_raw.copy()
+    last_signal_bar = -cooldown
+    for i, sig in enumerate(signals_cd):
+        if sig != 0:
+            if i - last_signal_bar < cooldown:
+                signals_cd[i] = 0
+            else:
+                last_signal_bar = i
+
     signals = pd.Series(0, index=test_df.index, dtype=int)
-    signals.loc[valid_rows.index] = signals_filtered
+    signals.loc[valid_rows.index] = signals_cd
 
     engine = BacktestEngine()
     result = engine.run(test_df, signals, symbol=symbol)

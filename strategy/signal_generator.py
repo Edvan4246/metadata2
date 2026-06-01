@@ -74,8 +74,8 @@ class SignalGenerator:
         client: MT5Client,
         models: Dict[str, ForexMLModel],
         max_spread: int = DEFAULT_MAX_SPREAD,
-        atr_sl_mult: float = 1.5,
-        atr_tp_mult: float = 2.5,
+        atr_sl_mult: float = 1.0,
+        atr_tp_mult: float = 3.0,
     ):
         self.client = client
         self.models = models

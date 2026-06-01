@@ -61,8 +61,8 @@ class BacktestEngine:
         self,
         initial_balance: float = 10_000,
         risk_per_trade: float = 0.02,
-        atr_sl_mult: float = 1.5,
-        atr_tp_mult: float = 2.5,
+        atr_sl_mult: float = 1.0,
+        atr_tp_mult: float = 3.0,
         commission_per_lot: float = 7.0,  # USD round-turn
         spread_points: int = 15,
     ):

@@ -34,15 +34,26 @@ logger = logging.getLogger(__name__)
 MODELS_DIR = "models"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-FORWARD_BARS    = 3
-SIGNAL_THRESHOLD = 0.0003   # 3 pips
+FORWARD_BARS   = 6      # look 6 bars ahead (30 min on M5)
+ATR_LABEL_MULT = 0.6   # label BUY/SELL if future move ≥ 0.6×ATR
 
 
 def _build_labels(df: pd.DataFrame) -> pd.Series:
-    future_ret = df["close"].shift(-FORWARD_BARS) / df["close"] - 1
+    """
+    ATR-adaptive labeling: threshold scales with each bar's volatility.
+    This aligns labels with the actual SL/TP distances used in trading
+    and works correctly across all instruments (forex, gold, indices).
+    """
+    from strategy.indicators import atr as calc_atr
+    atr_series = calc_atr(df, 14)
+    threshold = atr_series * ATR_LABEL_MULT   # dynamic per bar
+
+    future_price  = df["close"].shift(-FORWARD_BARS)
+    future_move   = future_price - df["close"]
+
     labels = pd.Series(0, index=df.index, dtype=int)
-    labels[future_ret >  SIGNAL_THRESHOLD] =  1
-    labels[future_ret < -SIGNAL_THRESHOLD] = -1
+    labels[future_move >  threshold] =  1
+    labels[future_move < -threshold] = -1
     return labels
 
 
