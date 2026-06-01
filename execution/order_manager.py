@@ -14,7 +14,7 @@ from typing import Optional, Dict
 from core.mt5_client import MT5Client, Position
 from risk.position_sizing import calculate_lot_size
 from risk.risk_manager import RiskManager
-from strategy.signal_generator import SignalResult
+from strategy.types import SignalResult
 from config.settings import settings
 
 logger = logging.getLogger(__name__)

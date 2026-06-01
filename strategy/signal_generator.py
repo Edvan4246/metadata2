@@ -9,11 +9,11 @@ Signal flow:
   [Spread filter]   → too wide? → skip
 """
 import logging
-from dataclasses import dataclass
 from typing import Optional, Dict
 
 import pandas as pd
 
+from strategy.types import SignalResult
 from strategy.indicators import add_all_indicators
 from strategy.ml_model import ForexMLModel
 from strategy.mean_reversion import generate_mean_reversion_signal
@@ -21,23 +21,6 @@ from core.mt5_client import MT5Client
 from core.session_filter import is_tradeable, session_name
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SignalResult:
-    symbol: str
-    direction: int          # 1=BUY, -1=SELL, 0=HOLD
-    confidence: float       # 0-1
-    ml_signal: int
-    ml_confidence: float
-    h1_trend: int           # 1=up, -1=down, 0=neutral
-    h4_adx: float
-    spread: float
-    atr: float
-    entry_price: float
-    sl: float
-    tp: float
-    reason: str
 
 
 # Per-symbol max spread thresholds (in broker points).

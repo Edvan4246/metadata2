@@ -16,7 +16,8 @@ from typing import Dict, List, Callable, Awaitable, Optional
 from core.mt5_client import MT5Client
 from core.data_fetcher import DataFetcher
 from strategy.ml_model import ForexMLModel
-from strategy.signal_generator import SignalGenerator, SignalResult
+from strategy.signal_generator import SignalGenerator
+from strategy.types import SignalResult
 from execution.order_manager import OrderManager
 from risk.risk_manager import RiskManager
 from config.settings import settings

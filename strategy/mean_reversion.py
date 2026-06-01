@@ -22,7 +22,7 @@ from typing import Optional
 import pandas as pd
 
 from strategy.indicators import add_all_indicators
-from strategy.signal_generator import SignalResult
+from strategy.types import SignalResult
 
 logger = logging.getLogger(__name__)
 
