@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import List
 
 
@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     mt5_password: str = Field(default="", alias="MT5_PASSWORD")
     mt5_server: str = Field(default="MetaQuotes-Demo", alias="MT5_SERVER")
 
-    # Trading
-    symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "US100", "US30"],
+    # Trading — stored as plain string, parsed by symbols_list()
+    symbols: str = Field(
+        default="EURUSD,GBPUSD,USDJPY,XAUUSD,US100,US30",
         alias="SYMBOLS",
     )
     magic_number: int = Field(default=20240101, alias="MAGIC_NUMBER")
@@ -34,9 +34,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "populate_by_name": True}
 
     def symbols_list(self) -> List[str]:
-        if isinstance(self.symbols, str):
-            return [s.strip() for s in self.symbols.split(",")]
-        return self.symbols
+        return [s.strip() for s in self.symbols.split(",") if s.strip()]
 
 
 settings = Settings()
