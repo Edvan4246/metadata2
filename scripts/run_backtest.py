@@ -42,11 +42,16 @@ print("\n" + "="*72)
 print(f"{'SYMBOL':<10} {'TRADES':>7} {'WIN%':>8} {'PF':>6} {'RETURN':>9} {'MAX DD':>8} {'SHARPE':>8}")
 print("="*72)
 
+BARS = 10_000   # ~33 dias úteis de M5 (5 min cada)
+
 for symbol in SYMBOLS:
-    df = client.get_ohlcv(symbol, "M5", 1200)
+    df = client.get_ohlcv(symbol, "M5", BARS)
     if df is None:
         logger.warning("No data for %s", symbol)
         continue
+
+    logger.info("%s: %d barras (de %s a %s)", symbol, len(df),
+                df.index[0].strftime("%Y-%m-%d"), df.index[-1].strftime("%Y-%m-%d"))
 
     # Train on first 70%
     split = int(len(df) * 0.70)
