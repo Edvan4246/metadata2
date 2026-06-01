@@ -1,6 +1,6 @@
 """
 Standalone backtest runner — vectorized signal generation.
-Uses simulated OHLCV from MT5Client (no live connection needed).
+Connects to MT5 using credentials from .env for real historical data.
 
 Usage: python scripts/run_backtest.py
 """
@@ -9,6 +9,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import logging
+import warnings
 import pandas as pd
 import numpy as np
 
@@ -16,6 +17,7 @@ from core.mt5_client import MT5Client
 from strategy.indicators import add_all_indicators, add_lag_features, get_feature_columns
 from strategy.ml_model import ForexMLModel
 from backtesting.engine import BacktestEngine
+from config.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("backtest")
@@ -23,7 +25,18 @@ logger = logging.getLogger("backtest")
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "XAUUSD", "US100", "US30"]
 CONFIDENCE_THRESHOLD = 0.50
 
-client = MT5Client(login=0, password="", server="")
+client = MT5Client(
+    login=settings.mt5_login,
+    password=settings.mt5_password,
+    server=settings.mt5_server,
+    magic=settings.magic_number,
+)
+
+if not client.connect():
+    logger.error("Nao foi possivel conectar ao MT5. Verifique o .env e se o MT5 esta aberto.")
+    sys.exit(1)
+
+logger.info("MT5 conectado com sucesso!")
 
 print("\n" + "="*72)
 print(f"{'SYMBOL':<10} {'TRADES':>7} {'WIN%':>8} {'PF':>6} {'RETURN':>9} {'MAX DD':>8} {'SHARPE':>8}")
@@ -92,5 +105,4 @@ for symbol in SYMBOLS:
     )
 
 print("="*72)
-print(f"\nNote: results use simulated price data (no live MT5 connection).")
-print("Connect MT5 and use real historical data for meaningful results.\n")
+client.disconnect()
