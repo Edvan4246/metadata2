@@ -50,6 +50,18 @@ _FOREX_CONTRACT_SIZE = 100_000
 MIN_LOT = 0.01
 MAX_LOT = 10.0
 
+# Hard lot caps per instrument — prevent outsized positions on volatile assets
+MAX_LOT_BY_SYMBOL: dict[str, float] = {
+    "XAUUSD": 2.0,
+    "XAGUSD": 1.0,
+    "US100":  3.0,
+    "US30":   3.0,
+    "US500":  3.0,
+    "GER40":  3.0,
+    "UK100":  3.0,
+    "BTCUSD": 0.5,
+}
+
 
 def adaptive_risk_pct(base_risk: float, confidence: float) -> float:
     """Scale risk between 0.75× and 1.5× base based on ML confidence."""
@@ -90,7 +102,8 @@ def calculate_lot_size(
         pip_value_per_lot = (point_size / entry) * _FOREX_CONTRACT_SIZE
 
     lots = risk_amount / (sl_points * pip_value_per_lot)
-    lots = max(min_lot, min(max_lot, round(lots, 2)))
+    symbol_max = MAX_LOT_BY_SYMBOL.get(sym, max_lot)
+    lots = max(min_lot, min(symbol_max, round(lots, 2)))
 
     logger.debug(
         "%s sizing: equity=%.2f risk=%.1f%% sl_pts=%.1f pip_val=%.2f → lots=%.2f",

@@ -10,6 +10,8 @@ Cycle (every tick_interval seconds):
 """
 import asyncio
 import logging
+import os
+import time
 from datetime import datetime
 from typing import Dict, List, Callable, Awaitable, Optional
 
@@ -33,7 +35,7 @@ class TradingBot:
         client: MT5Client,
         symbols: Optional[List[str]] = None,
         tick_interval: int = 60,
-        retrain_interval: int = 500,
+        retrain_interval: int = 150,
     ):
         self.client = client
         self.symbols = symbols or settings.symbols_list()
@@ -139,13 +141,23 @@ class TradingBot:
     # ------------------------------------------------------------------
 
     async def _bootstrap_models(self):
+        """Load saved models; force retrain any model older than 8 hours."""
         logger.info("Bootstrapping ML models…")
+        max_age_secs = 8 * 3600
         for symbol in self.symbols:
             model = self.models[symbol]
-            if not model.load():
-                df = self.fetcher.refresh(symbol, "M5")
-                if df is not None:
-                    model.train(df)
+            model_path = os.path.join("models", f"{symbol}.pkl")
+            stale = True
+            if os.path.exists(model_path):
+                age = time.time() - os.path.getmtime(model_path)
+                stale = age > max_age_secs
+            if not stale and model.load():
+                continue
+            logger.info("Retraining %s (model %s)", symbol,
+                        "stale" if stale else "missing")
+            df = self.fetcher.refresh(symbol, "M5")
+            if df is not None:
+                model.train(df)
 
     async def _retrain_models(self):
         logger.info("Retraining ML models…")

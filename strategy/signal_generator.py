@@ -129,6 +129,23 @@ class SignalGenerator:
             null_signal.ml_confidence = ml_conf
             return null_signal
 
+        # H4 EMA trend guard — volatile assets must trade WITH the H4 trend
+        # Prevents shorting gold/indices in a strong uptrend (and vice-versa)
+        _TREND_GUARD = {"XAUUSD", "XAGUSD", "US100", "US30", "US500", "GER40", "UK100"}
+        if symbol.upper() in _TREND_GUARD:
+            last_h4 = h4.iloc[-1]
+            if last_h4["ema_8"] > last_h4["ema_21"]:
+                h4_ema_dir = 1
+            elif last_h4["ema_8"] < last_h4["ema_21"]:
+                h4_ema_dir = -1
+            else:
+                h4_ema_dir = 0
+            if h4_ema_dir != 0 and ml_signal != h4_ema_dir:
+                null_signal.reason = f"h4_ema_conflict(h4={h4_ema_dir},ml={ml_signal})"
+                null_signal.ml_signal = ml_signal
+                null_signal.ml_confidence = ml_conf
+                return null_signal
+
         # H1 trend filter
         h1 = add_all_indicators(ohlcv["H1"])
         last_h1 = h1.iloc[-1]
