@@ -6,6 +6,7 @@ so callers can decide how to handle unavailability (paper trading fallback, retr
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
@@ -304,6 +305,21 @@ class MT5Client:
 
         logger.info("Closed position ticket=%d", ticket)
         return True
+
+    def get_position_profit(self, position_ticket: int) -> Optional[float]:
+        """Look up the actual closed P&L for a position from MT5 deal history."""
+        if not MT5_AVAILABLE:
+            return None
+        to_dt = datetime.now()
+        from_dt = to_dt - timedelta(days=3)
+        deals = mt5.history_deals_get(from_dt, to_dt)
+        if deals is None:
+            return None
+        for d in deals:
+            # entry==1 → DEAL_ENTRY_OUT (closing deal)
+            if d.position_id == position_ticket and d.entry == 1 and d.magic == self.magic:
+                return float(d.profit)
+        return None
 
     def modify_sl_tp(self, ticket: int, sl: float, tp: float) -> bool:
         if not MT5_AVAILABLE:

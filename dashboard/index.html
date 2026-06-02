@@ -149,6 +149,19 @@
     </div>
   </div>
 
+  <!-- Closed Trades History -->
+  <div class="card">
+    <h2>Histórico de Trades (últimos 20)</h2>
+    <table>
+      <thead><tr>
+        <th>Ticket</th><th>Par</th><th>Dir</th><th>Lotes</th><th>Entrada</th><th>P&amp;L</th><th>Fechado em</th>
+      </tr></thead>
+      <tbody id="closed-trades-body">
+        <tr><td colspan="7" style="color:var(--muted);text-align:center">Nenhum trade fechado ainda</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- Log -->
   <div class="card">
     <h2>Log de Eventos</h2>
@@ -162,6 +175,12 @@
   const ws = new WebSocket(`ws://${location.host}/ws`);
   const fmt = (v, d=2) => (v != null ? v.toFixed(d) : '—');
   const fmtCcy = (v, cur='USD') => v != null ? `${cur} ${v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—';
+  function fmtPrice(v, sym) {
+    if (v == null) return '—';
+    if (sym === 'XAUUSD' || sym === 'XAGUSD') return v.toFixed(2);
+    if (/^(US|GER|UK)/.test(sym)) return v.toFixed(1);
+    return v.toFixed(5);
+  }
 
   ws.onopen = () => log('WebSocket conectado', 'ok');
   ws.onclose = () => { log('WebSocket desconectado — reconectando…', 'warn'); setTimeout(()=>location.reload(), 5000); };
@@ -240,6 +259,29 @@
           </td>
           <td>${fmt(sig.h4_adx,1)}</td>
           <td style="color:var(--muted);font-size:12px">${sig.reason}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+    // Closed Trades
+    const ctbody = document.getElementById('closed-trades-body');
+    const closedTrades = s.closed_trades || [];
+    if (!closedTrades.length) {
+      ctbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center">Nenhum trade fechado ainda</td></tr>';
+    } else {
+      ctbody.innerHTML = closedTrades.map(t => {
+        const pnlClass = t.profit >= 0 ? 'pos-green' : 'pos-red';
+        const dirClass = t.type === 'buy' ? 'dir-buy' : 'dir-sell';
+        const dt = t.closed_at ? new Date(t.closed_at + 'Z').toLocaleString('pt-BR') : '—';
+        return `<tr>
+          <td style="color:var(--muted);font-size:12px">#${t.ticket}</td>
+          <td><strong>${t.symbol}</strong></td>
+          <td class="${dirClass}">${(t.type||'').toUpperCase()}</td>
+          <td>${fmt(t.volume,2)}</td>
+          <td style="font-size:12px">${fmtPrice(t.open, t.symbol)}</td>
+          <td class="${pnlClass}">${t.profit >= 0 ? '+' : ''}${fmt(t.profit,2)}</td>
+          <td style="color:var(--muted);font-size:11px">${dt}</td>
         </tr>`;
       }).join('');
     }

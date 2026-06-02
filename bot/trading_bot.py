@@ -59,6 +59,8 @@ class TradingBot:
         self._cycle_count = 0
         self._last_signals: Dict[str, SignalResult] = {}
         self._state_callbacks: List[Callable[..., Awaitable]] = []
+        self._known_tickets: Dict[int, dict] = {}    # ticket → {symbol, type, volume, open, profit}
+        self._closed_trades: list = []               # history for dashboard
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -106,6 +108,9 @@ class TradingBot:
         if self._cycle_count % self.retrain_interval == 0:
             await self._retrain_models()
 
+        # Detect positions closed by MT5 (SL/TP hit) since last cycle
+        self._sync_closed_positions()
+
         # Process each symbol
         for symbol in self.symbols:
             ohlcv = self.fetcher.get_multi_tf(symbol)
@@ -148,6 +153,54 @@ class TradingBot:
             df = self.fetcher.get(symbol, "M5")
             if df is not None and len(df) >= 200:
                 self.models[symbol].train(df)
+
+    # ------------------------------------------------------------------
+    # Closed-position sync (detect SL/TP hits)
+    # ------------------------------------------------------------------
+
+    def _sync_closed_positions(self):
+        """Detect positions closed by MT5 (SL/TP) since last tick and record them."""
+        current = {p.ticket: p for p in self.client.get_bot_positions()}
+        closed_tickets = set(self._known_tickets) - set(current)
+
+        for ticket in closed_tickets:
+            info = self._known_tickets[ticket]
+            # Try MT5 history first; fall back to last-known floating P&L
+            profit = self.client.get_position_profit(ticket)
+            if profit is None:
+                profit = info.get("profit", 0.0)
+
+            self.risk_manager.record_trade_closed(profit)
+            self._closed_trades.append({
+                "ticket":    ticket,
+                "symbol":    info["symbol"],
+                "type":      info["type"],
+                "volume":    info["volume"],
+                "open":      info["open"],
+                "profit":    round(profit, 2),
+                "closed_at": datetime.utcnow().isoformat(),
+            })
+            self.order_mgr._states.pop(ticket, None)
+            logger.info(
+                "Closed by MT5 | ticket=%d symbol=%s profit=%.2f",
+                ticket, info["symbol"], profit,
+            )
+
+        # Update known-tickets map to current open positions
+        self._known_tickets = {
+            t: {
+                "symbol": p.symbol,
+                "type":   p.type,
+                "volume": p.volume,
+                "open":   p.price_open,
+                "profit": p.profit,
+            }
+            for t, p in current.items()
+        }
+
+        # Cap history at 100 trades to avoid unbounded growth
+        if len(self._closed_trades) > 100:
+            self._closed_trades = self._closed_trades[-100:]
 
     # ------------------------------------------------------------------
     # State snapshot (consumed by API + WebSocket)
@@ -193,4 +246,5 @@ class TradingBot:
                 }
                 for sym, s in self._last_signals.items()
             },
+            "closed_trades": list(reversed(self._closed_trades[-20:])),
         }

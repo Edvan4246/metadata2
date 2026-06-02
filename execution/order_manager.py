@@ -167,7 +167,6 @@ class OrderManager:
         for pos in positions:
             success = self.client.close_position(pos.ticket)
             if success:
-                self.risk_manager.record_trade_closed(pos.profit)
                 self._states.pop(pos.ticket, None)
                 logger.info("Closed position %d profit=%.2f", pos.ticket, pos.profit)
 
