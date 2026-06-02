@@ -253,7 +253,7 @@ class MT5Client:
             "magic":     self.magic,
             "comment":   comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._get_filling_mode(symbol),
         }
 
         result = mt5.order_send(request)
@@ -295,7 +295,7 @@ class MT5Client:
             "magic":     self.magic,
             "comment":   "close",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._get_filling_mode(symbol),
         }
 
         result = mt5.order_send(request)
@@ -338,6 +338,19 @@ class MT5Client:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _get_filling_mode(self, symbol: str):
+        """Return the filling mode supported by the broker for this symbol.
+        filling_mode bitmask: bit-0 = FOK allowed, bit-1 = IOC allowed."""
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return mt5.ORDER_FILLING_FOK
+        fm = info.filling_mode
+        if fm & 1:   # FOK (Fill-or-Kill) supported
+            return mt5.ORDER_FILLING_FOK
+        if fm & 2:   # IOC (Immediate-or-Cancel) supported
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
 
     def _resolve_timeframe(self, tf: str):
         if not MT5_AVAILABLE:
