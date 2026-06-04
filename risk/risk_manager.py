@@ -48,6 +48,7 @@ class RiskManager:
             self.state.daily_start_balance = balance
             self.state.daily_pnl = 0.0
             self.state.daily_trades = 0
+            self.state.consecutive_losses = 0   # fresh start each day
             self.state.halted = False
             self.state.halt_reason = ""
 
