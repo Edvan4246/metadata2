@@ -131,7 +131,8 @@ class SignalGenerator:
 
         # H4 EMA trend guard — volatile assets must trade WITH the H4 trend
         # Prevents shorting gold/indices in a strong uptrend (and vice-versa)
-        _TREND_GUARD = {"XAUUSD", "XAGUSD", "US100", "US30", "US500", "GER40", "UK100"}
+        _TREND_GUARD = {"XAUUSD", "XAGUSD", "US100", "US30", "US500", "GER40", "UK100",
+                        "USDJPY", "EURJPY", "GBPJPY", "AUDUSD", "GBPUSD", "EURUSD"}
         if symbol.upper() in _TREND_GUARD:
             last_h4 = h4.iloc[-1]
             if last_h4["ema_8"] > last_h4["ema_21"]:

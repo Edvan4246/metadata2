@@ -36,13 +36,13 @@ SYMBOL_SESSIONS: dict[str, list[str]] = {
     # Gold — London and NY
     "XAUUSD": ["london", "ny"],
     "XAGUSD": ["london", "ny"],
-    # Asian pairs — include Tokyo
+    # Asian pairs — JPY pairs only in Tokyo (not AUD/NZD — ML trained on London/NY)
     "USDJPY": ["tokyo", "london", "ny"],
     "EURJPY": ["tokyo", "london", "ny"],
     "GBPJPY": ["tokyo", "london", "ny"],
     "AUDJPY": ["tokyo", "london", "ny"],
-    "AUDUSD": ["tokyo", "london", "ny"],
-    "NZDUSD": ["tokyo", "london", "ny"],
+    "AUDUSD": ["london", "ny"],
+    "NZDUSD": ["london", "ny"],
 }
 DEFAULT_SESSIONS = ["london", "ny"]    # all other forex pairs
 
