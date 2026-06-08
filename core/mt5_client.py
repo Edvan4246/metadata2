@@ -307,7 +307,7 @@ class MT5Client:
         return True
 
     def get_position_profit(self, position_ticket: int) -> Optional[float]:
-        """Look up the actual closed P&L for a position from MT5 deal history."""
+        """Sum the realized P&L for a position across all closing deals (handles partial closes)."""
         if not MT5_AVAILABLE:
             return None
         to_dt = datetime.now()
@@ -315,11 +315,15 @@ class MT5Client:
         deals = mt5.history_deals_get(from_dt, to_dt)
         if deals is None:
             return None
+        total = 0.0
+        found = False
         for d in deals:
-            # entry==1 → DEAL_ENTRY_OUT (closing deal)
+            # entry==1 → DEAL_ENTRY_OUT (closing deal); a position can have several
+            # (partial TP + final close), so sum profit+swap+commission across all of them
             if d.position_id == position_ticket and d.entry == 1 and d.magic == self.magic:
-                return float(d.profit)
-        return None
+                total += float(d.profit) + float(d.swap) + float(d.commission)
+                found = True
+        return total if found else None
 
     def modify_sl_tp(self, ticket: int, sl: float, tp: float) -> bool:
         if not MT5_AVAILABLE:
