@@ -310,8 +310,10 @@ class MT5Client:
         """Sum the realized P&L for a position across all closing deals (handles partial closes)."""
         if not MT5_AVAILABLE:
             return None
-        to_dt = datetime.now()
-        from_dt = to_dt - timedelta(days=3)
+        # Use a future ceiling so broker-timezone offsets (e.g. UTC+3) never
+        # exclude deals that were just closed but appear "ahead" of VPS local time.
+        to_dt = datetime.now() + timedelta(hours=24)
+        from_dt = datetime.now() - timedelta(days=4)
         deals = mt5.history_deals_get(from_dt, to_dt)
         if deals is None:
             return None
