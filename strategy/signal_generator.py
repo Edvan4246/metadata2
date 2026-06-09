@@ -101,6 +101,7 @@ class SignalGenerator:
         # --- Regime detection via H4 ADX ---
         h4 = add_all_indicators(ohlcv["H4"])
         h4_adx = float(h4["adx"].iloc[-1]) if not pd.isna(h4["adx"].iloc[-1]) else 0
+        null_signal.h4_adx = h4_adx  # propagate real ADX to all early-return paths
 
         # RANGING regime → mean-reversion strategy
         if h4_adx < 18:
