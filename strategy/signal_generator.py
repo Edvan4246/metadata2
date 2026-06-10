@@ -50,6 +50,26 @@ PRICE_DECIMALS: dict[str, int] = {
 }
 DEFAULT_PRICE_DECIMALS = 5
 
+# Minimum ATR floor per instrument (in price units) used for SL/TP sizing.
+# Prevents stops from collapsing to ~1 pip during very low-volatility
+# periods, which causes rapid repeated stop-outs from normal noise/spread.
+MIN_ATR_BY_SYMBOL: dict[str, float] = {
+    "XAUUSD": 0.50,
+    "XAGUSD": 0.05,
+    "US100":  5.0,
+    "US30":   10.0,
+    "US500":  2.0,
+    "GER40":  5.0,
+    "UK100":  5.0,
+    "BTCUSD": 50.0,
+    "ETHUSD": 5.0,
+    "USDJPY": 0.05,
+    "EURJPY": 0.05,
+    "GBPJPY": 0.05,
+    "AUDJPY": 0.05,
+}
+DEFAULT_MIN_ATR = 0.0005   # 5 pips for standard 5-decimal forex pairs
+
 
 class SignalGenerator:
     def __init__(
@@ -68,6 +88,9 @@ class SignalGenerator:
 
     def _max_spread(self, symbol: str) -> int:
         return MAX_SPREAD_BY_SYMBOL.get(symbol.upper(), self.max_spread)
+
+    def _min_atr(self, symbol: str) -> float:
+        return MIN_ATR_BY_SYMBOL.get(symbol.upper(), DEFAULT_MIN_ATR)
 
     def _price_decimals(self, symbol: str) -> int:
         return PRICE_DECIMALS.get(symbol.upper(), DEFAULT_PRICE_DECIMALS)
@@ -158,9 +181,11 @@ class SignalGenerator:
         else:
             h1_trend = 0
 
-        # M5 ATR for SL/TP
+        # M5 ATR for SL/TP — floored to avoid stops collapsing to ~1 pip
+        # during low-volatility periods (causes rapid repeated stop-outs)
         m5 = add_all_indicators(ohlcv["M5"])
         atr_val = float(m5["atr"].iloc[-1]) if not pd.isna(m5["atr"].iloc[-1]) else 0
+        atr_val = max(atr_val, self._min_atr(symbol))
 
         # Confluence check (H4 ADX already confirmed ≥ 18 above)
         trend_agrees = (h1_trend == ml_signal) or (h1_trend == 0)
