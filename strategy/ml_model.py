@@ -58,6 +58,14 @@ def _build_labels(df: pd.DataFrame) -> pd.Series:
 
 
 class ForexMLModel:
+    # Per-symbol confidence threshold for acting on a signal.
+    # XAUUSD: backtests showed 0.55 outperforms 0.60 consistently
+    # (0.60 turns XAUUSD's PF from ~1.0 to ~0.78) — keep it lower.
+    CONFIDENCE_THRESHOLD_BY_SYMBOL: dict[str, float] = {
+        "XAUUSD": 0.55,
+    }
+    DEFAULT_CONFIDENCE_THRESHOLD = 0.60
+
     def __init__(self, symbol: str):
         self.symbol = symbol
         self.xgb_model  = None
@@ -189,7 +197,10 @@ class ForexMLModel:
         signal    = y_map_inv[best_idx]
         confidence = float(avg_p[best_idx])
 
-        if signal == 0 or confidence < 0.60:
+        threshold = self.CONFIDENCE_THRESHOLD_BY_SYMBOL.get(
+            self.symbol.upper(), self.DEFAULT_CONFIDENCE_THRESHOLD
+        )
+        if signal == 0 or confidence < threshold:
             return 0, confidence
 
         return signal, confidence

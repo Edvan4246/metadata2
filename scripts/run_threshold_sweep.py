@@ -22,15 +22,13 @@ from config.settings import settings
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("sweep")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD", "US100", "US30", "BTCUSD", "ETHUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD", "US100", "US30"]
 THRESHOLDS = [0.48, 0.55, 0.60, 0.65]
 
 COOLDOWN_BARS: dict = {
     "XAUUSD": 12,
     "US100":  10,
     "US30":   10,
-    "BTCUSD": 12,
-    "ETHUSD": 12,
     "default": 6,
 }
 
