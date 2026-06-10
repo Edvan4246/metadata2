@@ -46,6 +46,9 @@ SYMBOL_SESSIONS: dict[str, list[str]] = {
 }
 DEFAULT_SESSIONS = ["london", "ny"]    # all other forex pairs
 
+# Crypto trades 24/7 — no session or weekend restrictions
+CRYPTO_SYMBOLS = {"BTCUSD", "ETHUSD"}
+
 
 def _in_session(now_utc: time, start: time, end: time) -> bool:
     if start <= end:
@@ -58,6 +61,9 @@ def is_tradeable(symbol: str, dt: Optional[datetime] = None) -> bool:
     """Return True if symbol should be traded at the given UTC datetime."""
     if dt is None:
         dt = datetime.now(timezone.utc)
+
+    if symbol.upper() in CRYPTO_SYMBOLS:
+        return True
 
     now_t = dt.time()
 

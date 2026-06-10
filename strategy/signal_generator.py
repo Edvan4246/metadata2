@@ -47,6 +47,7 @@ PRICE_DECIMALS: dict[str, int] = {
     "GER40":  1,
     "UK100":  1,
     "BTCUSD": 2,
+    "ETHUSD": 2,
 }
 DEFAULT_PRICE_DECIMALS = 5
 

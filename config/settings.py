@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # Trading — stored as plain string, parsed by symbols_list()
     symbols: str = Field(
-        default="EURUSD,GBPUSD,USDJPY,XAUUSD,US100,US30",
+        default="EURUSD,GBPUSD,USDJPY,AUDUSD,XAUUSD,US100,US30,BTCUSD,ETHUSD",
         alias="SYMBOLS",
     )
     magic_number: int = Field(default=20240101, alias="MAGIC_NUMBER")

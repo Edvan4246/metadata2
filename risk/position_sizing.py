@@ -60,6 +60,7 @@ MAX_LOT_BY_SYMBOL: dict[str, float] = {
     "GER40":  3.0,
     "UK100":  3.0,
     "BTCUSD": 0.5,
+    "ETHUSD": 1.0,
 }
 
 

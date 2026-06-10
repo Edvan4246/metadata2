@@ -189,7 +189,7 @@ class ForexMLModel:
         signal    = y_map_inv[best_idx]
         confidence = float(avg_p[best_idx])
 
-        if signal == 0 or confidence < 0.48:
+        if signal == 0 or confidence < 0.60:
             return 0, confidence
 
         return signal, confidence
