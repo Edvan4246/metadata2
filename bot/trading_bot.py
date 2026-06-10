@@ -120,7 +120,9 @@ class TradingBot:
             self._last_signals[symbol] = signal
 
             if signal.direction != 0:
-                self.order_mgr.process_signal(signal)
+                new_ticket = self.order_mgr.process_signal(signal)
+                if new_ticket is not None:
+                    self._register_new_ticket(new_ticket)
 
             # Partial TP + break-even + trailing stop
             if signal.atr > 0:
@@ -169,6 +171,23 @@ class TradingBot:
     # ------------------------------------------------------------------
     # Closed-position sync (detect SL/TP hits)
     # ------------------------------------------------------------------
+
+    def _register_new_ticket(self, ticket: int):
+        """Track a just-opened position immediately so that, even if it closes
+        again before the next cycle (fast SL/TP hit), _sync_closed_positions
+        still detects and records it instead of silently dropping it."""
+        if ticket in self._known_tickets:
+            return
+        for p in self.client.get_bot_positions():
+            if p.ticket == ticket:
+                self._known_tickets[ticket] = {
+                    "symbol": p.symbol,
+                    "type":   p.type,
+                    "volume": p.volume,
+                    "open":   p.price_open,
+                    "profit": p.profit,
+                }
+                break
 
     def _sync_closed_positions(self):
         """Detect positions closed by MT5 (SL/TP) since last tick and record them."""
