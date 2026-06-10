@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
         password=settings.mt5_password,
         server=settings.mt5_server,
         magic=settings.magic_number,
+        path=settings.mt5_path,
     )
 
     bot = TradingBot(client=client, symbols=settings.symbols_list())

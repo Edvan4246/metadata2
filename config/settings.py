@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     mt5_login: int = Field(default=0, alias="MT5_LOGIN")
     mt5_password: str = Field(default="", alias="MT5_PASSWORD")
     mt5_server: str = Field(default="MetaQuotes-Demo", alias="MT5_SERVER")
+    # Optional full path to terminal64.exe — set this if mt5.initialize()
+    # fails with "IPC timeout" because it can't auto-locate a running terminal
+    # (common when the terminal runs under a different session/install path).
+    mt5_path: str = Field(default="", alias="MT5_PATH")
 
     # Trading — stored as plain string, parsed by symbols_list()
     symbols: str = Field(

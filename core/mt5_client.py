@@ -68,11 +68,13 @@ class MT5Client:
         "D1":  1440,
     }
 
-    def __init__(self, login: int, password: str, server: str, magic: int = 20240101):
+    def __init__(self, login: int, password: str, server: str, magic: int = 20240101,
+                 path: str = ""):
         self.login = login
         self.password = password
         self.server = server
         self.magic = magic
+        self.path = path
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -85,7 +87,13 @@ class MT5Client:
             self._connected = True
             return True
 
-        if not mt5.initialize():
+        # 60s timeout — the default (much shorter) can time out on a busy
+        # VPS while the terminal is still starting up / restoring its session.
+        init_kwargs = {"timeout": 60_000}
+        if self.path:
+            init_kwargs["path"] = self.path
+
+        if not mt5.initialize(**init_kwargs):
             logger.error("mt5.initialize() failed: %s", mt5.last_error())
             return False
 
