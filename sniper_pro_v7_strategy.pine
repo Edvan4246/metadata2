@@ -4,11 +4,14 @@ strategy(
  overlay=true,
  max_labels_count=500,
  initial_capital=1000,
- default_qty_type=strategy.percent_of_equity,
- default_qty_value=100,
+ default_qty_type=strategy.fixed,
+ default_qty_value=1,
  pyramiding=0,
  calc_on_every_tick=false,
- process_orders_on_close=true)
+ process_orders_on_close=true,
+ commission_type=strategy.commission.percent,
+ commission_value=input.float(0.03, title="Comissão por Operação (%)"),
+ slippage=input.int(2, title="Slippage (ticks)"))
 
 //====================================================
 // CORES CYBER
@@ -34,6 +37,8 @@ rsiPeriodo = input.int(14, title="RSI")
 atrPeriodo = input.int(14, title="ATR")
 
 sessaoTimezone = input.string("UTC", title="Fuso Horário da Sessão")
+
+riskPercent = input.float(1.0, title="Risco por Trade (% do Capital)", minval=0.1, maxval=10)
 
 //====================================================
 // INDICADORES
@@ -118,14 +123,18 @@ sellSL =
 //====================================================
 // ORDENS DA ESTRATÉGIA
 //====================================================
+riskAmount = strategy.equity * (riskPercent / 100)
+
+qtyEntrada = riskAmount / atrValor
+
 if compraForte
     strategy.close("Venda")
-    strategy.entry("Compra", strategy.long)
+    strategy.entry("Compra", strategy.long, qty=qtyEntrada)
     strategy.exit("Saída Compra", "Compra", limit=buyTP, stop=buySL)
 
 if vendaForte
     strategy.close("Compra")
-    strategy.entry("Venda", strategy.short)
+    strategy.entry("Venda", strategy.short, qty=qtyEntrada)
     strategy.exit("Saída Venda", "Venda", limit=sellTP, stop=sellSL)
 
 //====================================================
