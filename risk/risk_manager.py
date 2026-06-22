@@ -6,11 +6,12 @@ Rules enforced:
   2. Max one position per symbol
   3. Max daily drawdown (halt trading for the day)
   4. Max consecutive losses (circuit breaker)
+  5. Per-symbol cooldown after a loss (reduces overtrading/revenge-trading)
 """
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
-from typing import List
+from datetime import date, datetime, timedelta
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,15 @@ class RiskManager:
         max_daily_drawdown: float = 0.06,
         max_consecutive_losses: int = 5,
         max_daily_trades: int = 20,
+        loss_cooldown_minutes: int = 45,
     ):
         self.max_open_positions = max_open_positions
         self.max_daily_drawdown = max_daily_drawdown
         self.max_consecutive_losses = max_consecutive_losses
         self.max_daily_trades = max_daily_trades
+        self.loss_cooldown_minutes = loss_cooldown_minutes
         self.state = RiskState()
+        self._symbol_cooldown_until: Dict[str, datetime] = {}
 
     def reset_daily(self, balance: float):
         today = date.today()
@@ -65,6 +69,11 @@ class RiskManager:
         if symbol in symbols_open:
             return False, f"already_open({symbol})"
 
+        cooldown_until = self._symbol_cooldown_until.get(symbol)
+        if cooldown_until and datetime.utcnow() < cooldown_until:
+            remaining = (cooldown_until - datetime.utcnow()).total_seconds() / 60
+            return False, f"loss_cooldown({symbol},{remaining:.0f}min_left)"
+
         drawdown = (self.state.daily_start_balance - equity) / max(self.state.daily_start_balance, 1)
         if drawdown >= self.max_daily_drawdown:
             self._halt(f"daily_drawdown_{drawdown:.2%}")
@@ -79,11 +88,15 @@ class RiskManager:
 
         return True, "ok"
 
-    def record_trade_closed(self, profit: float):
+    def record_trade_closed(self, profit: float, symbol: str = ""):
         self.state.daily_pnl += profit
         self.state.daily_trades += 1
         if profit < 0:
             self.state.consecutive_losses += 1
+            if symbol:
+                self._symbol_cooldown_until[symbol] = datetime.utcnow() + timedelta(
+                    minutes=self.loss_cooldown_minutes
+                )
         else:
             self.state.consecutive_losses = 0
 

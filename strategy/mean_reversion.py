@@ -40,11 +40,13 @@ def generate_mean_reversion_signal(
     entry_price: float,
     spread: float,
     max_spread: int,
+    h4_adx: float,
     price_decimals: int = 5,
 ) -> Optional[SignalResult]:
     """
     Returns a SignalResult if a mean-reversion entry is found, else None.
-    Called when H4 ADX < 18.
+    Called when H4 ADX < 18 (the regime check already happened in the caller —
+    h4_adx is passed through only to populate the SignalResult).
     """
     if "M5" not in ohlcv:
         return None
@@ -59,13 +61,8 @@ def generate_mean_reversion_signal(
     bb_up   = last.get("bb_upper", 0)
     bb_mid  = last.get("bb_mid", close)
     atr     = last.get("atr", 0)
-    adx     = last.get("adx", 25)
 
     if pd.isna(rsi) or pd.isna(atr) or atr == 0:
-        return None
-
-    # Only operate in clearly ranging conditions
-    if adx > 22:
         return None
 
     direction = 0
@@ -111,7 +108,7 @@ def generate_mean_reversion_signal(
         ml_signal=direction,
         ml_confidence=confidence,
         h1_trend=0,
-        h4_adx=float(adx),
+        h4_adx=h4_adx,
         spread=spread,
         atr=float(atr),
         entry_price=entry_price,

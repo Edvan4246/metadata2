@@ -59,10 +59,19 @@ def _build_labels(df: pd.DataFrame) -> pd.Series:
 
 class ForexMLModel:
     # Per-symbol confidence threshold for acting on a signal.
-    # XAUUSD: backtests showed 0.55 outperforms 0.60 consistently
-    # (0.60 turns XAUUSD's PF from ~1.0 to ~0.78) — keep it lower.
+    # Tuned from 3 weeks of live FBS-Demo results (218 closed trades,
+    # 2026-06-02 to 2026-06-22), not just backtest — live PF/win-rate per
+    # symbol diverged from the earlier backtest-only numbers:
+    #   EURUSD PF=1.24 win=47% | GBPUSD PF=1.18 win=41% → keep default
+    #   USDCAD PF=0.78 win=33% | AUDUSD PF=0.59 win=27% → raise bar
+    #   XAUUSD PF=0.50 win=32% (the old 0.55 override was NOT working live)
+    #   USDJPY PF=0.45 win=19%, almost all buys, 0% win on the few sells
+    #     → biggest loser by far, raise bar the most
     CONFIDENCE_THRESHOLD_BY_SYMBOL: dict[str, float] = {
-        "XAUUSD": 0.55,
+        "XAUUSD": 0.65,
+        "USDCAD": 0.65,
+        "AUDUSD": 0.68,
+        "USDJPY": 0.72,
     }
     DEFAULT_CONFIDENCE_THRESHOLD = 0.60
 

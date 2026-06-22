@@ -68,6 +68,28 @@ class TestRiskManager:
         rm.record_trade_closed(-50.0)
         assert rm.state.consecutive_losses == 3
 
+    def test_loss_cooldown_blocks_same_symbol(self):
+        rm = RiskManager(loss_cooldown_minutes=45)
+        rm.state.daily_start_balance = 10000
+        rm.record_trade_closed(-50.0, "EURUSD")
+        ok, reason = rm.can_open("EURUSD", [], 10000, 10000)
+        assert not ok
+        assert "loss_cooldown" in reason
+
+    def test_loss_cooldown_does_not_block_other_symbol(self):
+        rm = RiskManager(loss_cooldown_minutes=45)
+        rm.state.daily_start_balance = 10000
+        rm.record_trade_closed(-50.0, "EURUSD")
+        ok, reason = rm.can_open("GBPUSD", [], 10000, 10000)
+        assert ok
+
+    def test_win_does_not_trigger_cooldown(self):
+        rm = RiskManager(loss_cooldown_minutes=45)
+        rm.state.daily_start_balance = 10000
+        rm.record_trade_closed(100.0, "EURUSD")
+        ok, reason = rm.can_open("EURUSD", [], 10000, 10000)
+        assert ok
+
 
 class TestPositionSizing:
     def test_basic_sizing(self):

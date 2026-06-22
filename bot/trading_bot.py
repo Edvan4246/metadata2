@@ -201,7 +201,7 @@ class TradingBot:
             if profit is None:
                 profit = info.get("profit", 0.0)
 
-            self.risk_manager.record_trade_closed(profit)
+            self.risk_manager.record_trade_closed(profit, info["symbol"])
             self._closed_trades.append({
                 "ticket":    ticket,
                 "symbol":    info["symbol"],

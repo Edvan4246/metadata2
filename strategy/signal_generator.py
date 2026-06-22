@@ -134,6 +134,7 @@ class SignalGenerator:
                 entry_price=entry,
                 spread=spread,
                 max_spread=symbol_max_spread,
+                h4_adx=h4_adx,
                 price_decimals=self._price_decimals(symbol),
             )
             if mr is not None:
@@ -187,8 +188,12 @@ class SignalGenerator:
         atr_val = float(m5["atr"].iloc[-1]) if not pd.isna(m5["atr"].iloc[-1]) else 0
         atr_val = max(atr_val, self._min_atr(symbol))
 
-        # Confluence check (H4 ADX already confirmed ≥ 18 above)
-        trend_agrees = (h1_trend == ml_signal) or (h1_trend == 0)
+        # Confluence check (H4 ADX already confirmed ≥ 18 above).
+        # Require explicit H1 agreement — a neutral H1 (no EMA stack) used to
+        # pass through as "agreement", which let roughly half of all trades
+        # through with no real multi-timeframe confirmation. Tightening this
+        # cuts trade volume but raises the quality bar per entry.
+        trend_agrees = h1_trend == ml_signal
 
         if not trend_agrees:
             return SignalResult(
@@ -208,8 +213,8 @@ class SignalGenerator:
             sl = round(entry + self.atr_sl_mult * atr_val, decimals)
             tp = round(entry - self.atr_tp_mult * atr_val, decimals)
 
-        final_confidence = ml_conf * (1.1 if h1_trend == ml_signal else 1.0)
-        final_confidence = min(final_confidence, 1.0)
+        # H1 agreement is mandatory above, so always apply the confluence boost.
+        final_confidence = min(ml_conf * 1.1, 1.0)
 
         return SignalResult(
             symbol=symbol,
