@@ -24,6 +24,8 @@ rsiPeriodo = input.int(14, title="RSI")
 
 atrPeriodo = input.int(14, title="ATR")
 
+sessaoTimezone = input.string("UTC", title="Fuso Horário da Sessão")
+
 //====================================================
 // INDICADORES
 //====================================================
@@ -41,15 +43,6 @@ atrValor = ta.atr(atrPeriodo)
 tendenciaAlta = emaFast > emaSlow
 
 tendenciaBaixa = emaFast < emaSlow
-
-//====================================================
-// CRUZAMENTOS
-//====================================================
-cruzamentoCompra =
- ta.crossover(emaFast, emaSlow)
-
-cruzamentoVenda =
- ta.crossunder(emaFast, emaSlow)
 
 //====================================================
 // CANDLE FORTE
@@ -87,14 +80,16 @@ sinalVenda =
 //====================================================
 compraForte =
  sinalCompra and
- close > emaFast
+ close > emaFast and
+ barstate.isconfirmed
 
 //====================================================
 // VENDA FORTE
 //====================================================
 vendaForte =
  sinalVenda and
- close < emaFast
+ close < emaFast and
+ barstate.isconfirmed
 
 //====================================================
 // TAKE PROFIT DINÂMICO
@@ -173,29 +168,22 @@ plotshape(
 //====================================================
 // TAKE PROFIT VISUAL
 //====================================================
-plot(
- compraForte ? buyTP : na,
- title="TP COMPRA",
- color=color.new(verdeNeon, 0),
- linewidth=2)
+var line buyTPLine = na
+var line buySLLine = na
+var line sellTPLine = na
+var line sellSLLine = na
 
-plot(
- compraForte ? buySL : na,
- title="SL COMPRA",
- color=color.new(vermelhoNeon, 0),
- linewidth=1)
+if compraForte
+    line.delete(buyTPLine)
+    line.delete(buySLLine)
+    buyTPLine := line.new(bar_index, buyTP, bar_index, buyTP, extend=extend.right, color=color.new(verdeNeon, 0), width=2)
+    buySLLine := line.new(bar_index, buySL, bar_index, buySL, extend=extend.right, color=color.new(vermelhoNeon, 0), width=1)
 
-plot(
- vendaForte ? sellTP : na,
- title="TP VENDA",
- color=color.new(verdeNeon, 0),
- linewidth=2)
-
-plot(
- vendaForte ? sellSL : na,
- title="SL VENDA",
- color=color.new(vermelhoNeon, 0),
- linewidth=1)
+if vendaForte
+    line.delete(sellTPLine)
+    line.delete(sellSLLine)
+    sellTPLine := line.new(bar_index, sellTP, bar_index, sellTP, extend=extend.right, color=color.new(verdeNeon, 0), width=2)
+    sellSLLine := line.new(bar_index, sellSL, bar_index, sellSL, extend=extend.right, color=color.new(vermelhoNeon, 0), width=1)
 
 //====================================================
 // ALERTAS
@@ -213,7 +201,7 @@ alertcondition(
 //====================================================
 // SESSÃO
 //====================================================
-horaAtual = hour
+horaAtual = hour(time, sessaoTimezone)
 
 sessao =
  horaAtual >= 9 and horaAtual <= 12 ?
