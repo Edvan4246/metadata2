@@ -403,28 +403,40 @@ ESTRATEGIAS = {
     "crt": aplicar_estrategia_crt,
 }
 
-# Mapa símbolo -> estratégia (sr_zonas ou crt) com melhor fator de lucro nos
-# backtests comparativos feitos sobre o histórico atual. Escolhido por
-# inspeção manual dos resultados, não por validação fora da amostra: é um
-# ajuste no mesmo período de dados usado pra decidir, então a divisão pode
-# não se repetir em dados futuros. Símbolos fora do mapa caem no padrão.
+# Mapa símbolo -> estratégia (sr_zonas ou crt), separado por timeframe porque
+# --validar-auto (janela de 180 dias fora da amostra de 6 meses) deu
+# resultados bem diferentes pros dois:
+#
+# M5: o histórico exportado é curto (a janela de 180 dias cobre o mesmo
+# período usado pra montar este mapa, não é validação independente de
+# verdade). Mantido o roteamento por símbolo por ser a melhor informação
+# disponível, mas sem confirmação real ainda.
+#
+# H1: o histórico é longo o bastante pra a janela de 180 dias ser de fato
+# um período diferente, e nesse teste real o roteamento por símbolo bateu
+# só 4/8 (e os vencedores reais da janela também ficaram 4-4 entre as
+# estratégias) — ou seja, escolher por símbolo no H1 não é melhor que
+# escolher ao acaso. Por isso H1 usa uma única estratégia fixa pra todos os
+# símbolos: sr_zonas, que teve o maior retorno agregado e o menor
+# drawdown/pior caso no histórico completo (uma vantagem marginal, não uma
+# confirmação forte).
 MAPA_AUTO = {
-    "XAUUSD.c_PERIOD_H1": "sr_zonas",
     "XAUUSD.c_PERIOD_M5": "sr_zonas",
-    "USDCAD_PERIOD_H1": "sr_zonas",
-    "XAGUSD.c_PERIOD_H1": "sr_zonas",
     "GBPJPY.c_PERIOD_M5": "sr_zonas",
     "GBPUSD_PERIOD_M5": "sr_zonas",
     "EURUSD_PERIOD_M5": "sr_zonas",
-    "AUDUSD_PERIOD_H1": "sr_zonas",
     "USDCAD_PERIOD_M5": "crt",
     "XAGUSD.c_PERIOD_M5": "crt",
-    "GBPUSD_PERIOD_H1": "crt",
     "USDJPY_PERIOD_M5": "crt",
     "AUDUSD_PERIOD_M5": "crt",
-    "EURUSD_PERIOD_H1": "crt",
-    "USDJPY_PERIOD_H1": "crt",
-    "GBPJPY.c_PERIOD_H1": "crt",
+    "XAUUSD.c_PERIOD_H1": "sr_zonas",
+    "USDCAD_PERIOD_H1": "sr_zonas",
+    "XAGUSD.c_PERIOD_H1": "sr_zonas",
+    "AUDUSD_PERIOD_H1": "sr_zonas",
+    "GBPUSD_PERIOD_H1": "sr_zonas",
+    "EURUSD_PERIOD_H1": "sr_zonas",
+    "USDJPY_PERIOD_H1": "sr_zonas",
+    "GBPJPY.c_PERIOD_H1": "sr_zonas",
 }
 ESTRATEGIA_AUTO_PADRAO = "sr_zonas"
 
