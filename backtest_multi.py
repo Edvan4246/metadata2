@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Backtest multi-símbolo com múltiplas estratégias (Sniper Pro V7, Fibonacci,
-Bill Williams, Zonas de Suporte/Resistência).
+Bill Williams, Zonas de Suporte/Resistência, Candle Range Theory).
 
 Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia sniper
     python3 backtest_multi.py --data-dir ./historico --estrategia fibonacci
     python3 backtest_multi.py --data-dir ./historico --estrategia williams
     python3 backtest_multi.py --data-dir ./historico --estrategia sr_zonas
+    python3 backtest_multi.py --data-dir ./historico --estrategia crt
 
 Lê um CSV por símbolo (colunas: time,open,high,low,close,volume) e imprime
 uma tabela comparativa de desempenho por símbolo, ordenada por retorno.
@@ -306,11 +307,99 @@ def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_t
     return df
 
 
+def aplicar_estrategia_crt(df, buffer_atr=0.1, validade_pendente=3, rr_minimo=1.3):
+    """Candle Range Theory (CRT/ICT): a vela anterior define um range (topo =
+    high, fundo = low). Quando a vela atual varre (sweep) além desse range com
+    o pavio mas fecha de volta pra dentro dele (rejeição/manipulação), é
+    armada uma ordem pendente (buy stop / sell stop) no rompimento da própria
+    vela de rejeição, na direção contrária à varredura. Stop além do pavio que
+    varreu o range; alvo na ponta oposta do range, respeitando um risco:
+    retorno mínimo (senão usa esse mínimo em vez do range, que pode ser
+    estreito demais)."""
+    high = df["high"].values
+    low = df["low"].values
+    close = df["close"].values
+    open_ = df["open"].values
+    atr = df["atr"].values
+    n = len(df)
+
+    compra_forte = np.zeros(n, dtype=bool)
+    venda_forte = np.zeros(n, dtype=bool)
+    entrada_compra = np.full(n, np.nan)
+    sl_compra = np.full(n, np.nan)
+    tp_compra = np.full(n, np.nan)
+    entrada_venda = np.full(n, np.nan)
+    sl_venda = np.full(n, np.nan)
+    tp_venda = np.full(n, np.nan)
+
+    pendente = None
+
+    for i in range(1, n):
+        ref_topo = high[i - 1]
+        ref_fundo = low[i - 1]
+
+        if pendente is not None:
+            if i - pendente["criado_em"] > validade_pendente:
+                pendente = None
+            elif pendente["tipo"] == "compra":
+                if low[i] < pendente["invalida"]:
+                    pendente = None
+                elif high[i] >= pendente["trigger"]:
+                    compra_forte[i] = True
+                    entrada_compra[i] = pendente["trigger"]
+                    sl_compra[i] = pendente["sl"]
+                    tp_compra[i] = pendente["tp"]
+                    pendente = None
+            else:
+                if high[i] > pendente["invalida"]:
+                    pendente = None
+                elif low[i] <= pendente["trigger"]:
+                    venda_forte[i] = True
+                    entrada_venda[i] = pendente["trigger"]
+                    sl_venda[i] = pendente["sl"]
+                    tp_venda[i] = pendente["tp"]
+                    pendente = None
+
+        if pendente is None and not compra_forte[i] and not venda_forte[i]:
+            atr_i = atr[i]
+            if not np.isnan(atr_i) and atr_i > 0 and not np.isnan(ref_topo) and not np.isnan(ref_fundo):
+                varreu_fundo = low[i] < ref_fundo
+                rejeitou_para_cima = close[i] > ref_fundo and close[i] > open_[i]
+                if varreu_fundo and rejeitou_para_cima:
+                    gatilho = high[i] + atr_i * buffer_atr
+                    sl = low[i] - atr_i * buffer_atr
+                    sl_dist = gatilho - sl
+                    alvo_minimo = gatilho + sl_dist * rr_minimo
+                    tp = ref_topo if ref_topo >= alvo_minimo else alvo_minimo
+                    pendente = {"tipo": "compra", "trigger": gatilho, "sl": sl, "tp": tp, "invalida": sl, "criado_em": i}
+
+                varreu_topo = high[i] > ref_topo
+                rejeitou_para_baixo = close[i] < ref_topo and close[i] < open_[i]
+                if pendente is None and varreu_topo and rejeitou_para_baixo:
+                    gatilho = low[i] - atr_i * buffer_atr
+                    sl = high[i] + atr_i * buffer_atr
+                    sl_dist = sl - gatilho
+                    alvo_minimo = gatilho - sl_dist * rr_minimo
+                    tp = ref_fundo if ref_fundo <= alvo_minimo else alvo_minimo
+                    pendente = {"tipo": "venda", "trigger": gatilho, "sl": sl, "tp": tp, "invalida": sl, "criado_em": i}
+
+    df["compra_forte"] = compra_forte
+    df["venda_forte"] = venda_forte
+    df["entrada_compra"] = entrada_compra
+    df["sl_compra"] = sl_compra
+    df["tp_compra"] = tp_compra
+    df["entrada_venda"] = entrada_venda
+    df["sl_venda"] = sl_venda
+    df["tp_venda"] = tp_venda
+    return df
+
+
 ESTRATEGIAS = {
     "sniper": aplicar_estrategia_sniper,
     "fibonacci": aplicar_estrategia_fibonacci,
     "williams": aplicar_estrategia_williams,
     "sr_zonas": aplicar_estrategia_sr_zonas,
+    "crt": aplicar_estrategia_crt,
 }
 
 
@@ -458,6 +547,12 @@ def main():
                          help="[sr_zonas] nº de barras que a ordem pendente fica armada antes de cancelar")
     parser.add_argument("--sr-rr-minimo", type=float, default=1.5,
                          help="[sr_zonas] risco:retorno mínimo aceito; ignora zonas opostas mais próximas que isso")
+    parser.add_argument("--crt-buffer-atr", type=float, default=0.1,
+                         help="[crt] distância do gatilho/stop além da vela de rejeição, em ATR")
+    parser.add_argument("--crt-validade-pendente", type=int, default=3,
+                         help="[crt] nº de barras que a ordem pendente fica armada antes de cancelar")
+    parser.add_argument("--crt-rr-minimo", type=float, default=1.3,
+                         help="[crt] risco:retorno mínimo aceito; ignora o range como alvo se for mais próximo que isso")
     parser.add_argument("--dias", type=float, default=None,
                          help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
                               "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
@@ -492,6 +587,13 @@ def main():
                     buffer_trigger_atr=args.sr_buffer_atr,
                     validade_pendente=args.sr_validade_pendente,
                     rr_minimo=args.sr_rr_minimo,
+                )
+            elif args.estrategia == "crt":
+                df = aplicar_estrategia(
+                    df,
+                    buffer_atr=args.crt_buffer_atr,
+                    validade_pendente=args.crt_validade_pendente,
+                    rr_minimo=args.crt_rr_minimo,
                 )
             else:
                 df = aplicar_estrategia(df)
