@@ -161,7 +161,7 @@ def aplicar_estrategia_williams(df):
     return df
 
 
-def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_trigger_atr=0.1, validade_pendente=5, max_idade_zona=500):
+def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_trigger_atr=0.1, validade_pendente=5, max_idade_zona=500, rr_minimo=1.5):
     """Suporte/Resistência como regiões (não pontos): pivôs (fractais de 5 barras)
     são agrupados em zonas; toda resistência rompida (fechamento acima do topo da
     zona) se torna suporte, e todo suporte rompido se torna resistência. Na
@@ -169,6 +169,9 @@ def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_t
     armada uma ordem pendente (buy stop / sell stop) um pouco acima/abaixo do
     teste — se o preço romper esse gatilho nas próximas barras a operação é
     executada; senão a ordem é cancelada se a zona for invalidada ou expirar.
+    O alvo é a zona oposta mais próxima, mas só se ela garantir pelo menos
+    rr_minimo de risco:retorno; caso contrário usa esse mínimo direto, pra não
+    aceitar trades com alvo mais perto do que o stop.
     Pensada para scalping em M5 dentro de canais de tendência."""
     n = len(df)
     high = df["high"].values
@@ -263,8 +266,15 @@ def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_t
                     for zona in zonas:
                         if zona["tipo"] == "suporte" and low[i] <= zona["topo"] and high[i] >= zona["fundo"]:
                             gatilho = max(zona["topo"], high[i]) + atr_i * buffer_trigger_atr
+                            sl_dist = gatilho - zona["fundo"]
+                            alvo_minimo = gatilho + sl_dist * rr_minimo
                             candidatos = [z["fundo"] for z in zonas if z["tipo"] == "resistencia" and z["fundo"] > gatilho]
-                            alvo = min(candidatos) if candidatos else gatilho + (gatilho - zona["fundo"]) * 2
+                            alvo_zona = min(candidatos) if candidatos else None
+                            # Ignora a zona oposta como alvo se ela estiver mais perto
+                            # do que o mínimo de risco:retorno exigido (alvo perto
+                            # demais do gatilho é o que estava deixando o fator de
+                            # lucro abaixo de 1 mesmo com boa taxa de acerto).
+                            alvo = alvo_zona if (alvo_zona is not None and alvo_zona >= alvo_minimo) else alvo_minimo
                             pendente = {
                                 "tipo": "compra", "trigger": gatilho, "sl": zona["fundo"], "tp": alvo,
                                 "zona_fundo": zona["fundo"], "criado_em": i,
@@ -274,8 +284,11 @@ def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_t
                     for zona in zonas:
                         if zona["tipo"] == "resistencia" and high[i] >= zona["fundo"] and low[i] <= zona["topo"]:
                             gatilho = min(zona["fundo"], low[i]) - atr_i * buffer_trigger_atr
+                            sl_dist = zona["topo"] - gatilho
+                            alvo_minimo = gatilho - sl_dist * rr_minimo
                             candidatos = [z["topo"] for z in zonas if z["tipo"] == "suporte" and z["topo"] < gatilho]
-                            alvo = max(candidatos) if candidatos else gatilho - (zona["topo"] - gatilho) * 2
+                            alvo_zona = max(candidatos) if candidatos else None
+                            alvo = alvo_zona if (alvo_zona is not None and alvo_zona <= alvo_minimo) else alvo_minimo
                             pendente = {
                                 "tipo": "venda", "trigger": gatilho, "sl": zona["topo"], "tp": alvo,
                                 "zona_topo": zona["topo"], "criado_em": i,
@@ -443,6 +456,8 @@ def main():
                          help="[sr_zonas] distância do gatilho do buy/sell stop além do teste da zona, em ATR")
     parser.add_argument("--sr-validade-pendente", type=int, default=5,
                          help="[sr_zonas] nº de barras que a ordem pendente fica armada antes de cancelar")
+    parser.add_argument("--sr-rr-minimo", type=float, default=1.5,
+                         help="[sr_zonas] risco:retorno mínimo aceito; ignora zonas opostas mais próximas que isso")
     parser.add_argument("--dias", type=float, default=None,
                          help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
                               "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
@@ -476,6 +491,7 @@ def main():
                     merge_tol_atr=args.sr_merge_tol_atr,
                     buffer_trigger_atr=args.sr_buffer_atr,
                     validade_pendente=args.sr_validade_pendente,
+                    rr_minimo=args.sr_rr_minimo,
                 )
             else:
                 df = aplicar_estrategia(df)
