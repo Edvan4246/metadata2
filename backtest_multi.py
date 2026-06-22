@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Backtest multi-símbolo com múltiplas estratégias (Sniper Pro V7, Fibonacci, Bill Williams).
+"""Backtest multi-símbolo com múltiplas estratégias (Sniper Pro V7, Fibonacci,
+Bill Williams, Zonas de Suporte/Resistência).
 
 Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia sniper
     python3 backtest_multi.py --data-dir ./historico --estrategia fibonacci
     python3 backtest_multi.py --data-dir ./historico --estrategia williams
+    python3 backtest_multi.py --data-dir ./historico --estrategia sr_zonas
 
 Lê um CSV por símbolo (colunas: time,open,high,low,close,volume) e imprime
 uma tabela comparativa de desempenho por símbolo, ordenada por retorno.
@@ -61,8 +63,10 @@ def aplicar_estrategia_sniper(df):
     df["compra_forte"] = (sinal_compra & (df["close"] > df["ema_fast"])).fillna(False)
     df["venda_forte"] = (sinal_venda & (df["close"] < df["ema_fast"])).fillna(False)
 
+    df["entrada_compra"] = df["close"]
     df["sl_compra"] = df["close"] - df["atr"]
     df["tp_compra"] = df["close"] + df["atr"] * 2
+    df["entrada_venda"] = df["close"]
     df["sl_venda"] = df["close"] + df["atr"]
     df["tp_venda"] = df["close"] - df["atr"] * 2
     return df
@@ -101,8 +105,10 @@ def aplicar_estrategia_fibonacci(df, lookback):
     df["compra_forte"] = (tendencia_alta & pullback_compra & amplitude_valida).fillna(False)
     df["venda_forte"] = (tendencia_baixa & pullback_venda & amplitude_valida).fillna(False)
 
+    df["entrada_compra"] = df["close"]
     df["sl_compra"] = swing_low
     df["tp_compra"] = swing_high + amplitude * 0.618
+    df["entrada_venda"] = df["close"]
     df["sl_venda"] = swing_high
     df["tp_venda"] = swing_low - amplitude * 0.618
     return df
@@ -146,10 +152,144 @@ def aplicar_estrategia_williams(df):
     df["compra_forte"] = (rompeu_alta & boca_alta & (ao > 0)).fillna(False)
     df["venda_forte"] = (rompeu_baixa & boca_baixa & (ao < 0)).fillna(False)
 
+    df["entrada_compra"] = df["close"]
     df["sl_compra"] = ultimo_fractal_baixa
     df["tp_compra"] = df["close"] + (df["close"] - ultimo_fractal_baixa) * 2
+    df["entrada_venda"] = df["close"]
     df["sl_venda"] = ultimo_fractal_alta
     df["tp_venda"] = df["close"] - (ultimo_fractal_alta - df["close"]) * 2
+    return df
+
+
+def aplicar_estrategia_sr_zonas(df, margem_atr=0.15, merge_tol_atr=0.5, buffer_trigger_atr=0.1, validade_pendente=5, max_idade_zona=500):
+    """Suporte/Resistência como regiões (não pontos): pivôs (fractais de 5 barras)
+    são agrupados em zonas; toda resistência rompida (fechamento acima do topo da
+    zona) se torna suporte, e todo suporte rompido se torna resistência. Na
+    tendência (EMA9/21), quando o preço testa uma zona a favor da tendência, é
+    armada uma ordem pendente (buy stop / sell stop) um pouco acima/abaixo do
+    teste — se o preço romper esse gatilho nas próximas barras a operação é
+    executada; senão a ordem é cancelada se a zona for invalidada ou expirar.
+    Pensada para scalping em M5 dentro de canais de tendência."""
+    n = len(df)
+    high = df["high"].values
+    low = df["low"].values
+    close = df["close"].values
+    atr = df["atr"].values
+    ema_fast = df["ema_fast"].values
+    ema_slow = df["ema_slow"].values
+
+    fractal_alta = (
+        (df["high"].shift(2) > df["high"].shift(4))
+        & (df["high"].shift(2) > df["high"].shift(3))
+        & (df["high"].shift(2) > df["high"].shift(1))
+        & (df["high"].shift(2) > df["high"])
+    ).fillna(False).values
+    fractal_baixa = (
+        (df["low"].shift(2) < df["low"].shift(4))
+        & (df["low"].shift(2) < df["low"].shift(3))
+        & (df["low"].shift(2) < df["low"].shift(1))
+        & (df["low"].shift(2) < df["low"])
+    ).fillna(False).values
+    valor_fractal_alta = df["high"].shift(2).values
+    valor_fractal_baixa = df["low"].shift(2).values
+
+    compra_forte = np.zeros(n, dtype=bool)
+    venda_forte = np.zeros(n, dtype=bool)
+    entrada_compra = np.full(n, np.nan)
+    sl_compra = np.full(n, np.nan)
+    tp_compra = np.full(n, np.nan)
+    entrada_venda = np.full(n, np.nan)
+    sl_venda = np.full(n, np.nan)
+    tp_venda = np.full(n, np.nan)
+
+    zonas = []  # cada zona: {tipo: "suporte"/"resistencia", fundo, topo, ultimo_toque}
+    pendente = None  # ordem pendente tipo buy stop / sell stop
+
+    def registrar_pivot(tipo, preco, atr_local, idx):
+        if np.isnan(atr_local) or atr_local <= 0:
+            return
+        margem = atr_local * margem_atr
+        tol = atr_local * merge_tol_atr
+        for zona in zonas:
+            if zona["tipo"] == tipo and zona["fundo"] - tol <= preco <= zona["topo"] + tol:
+                zona["fundo"] = min(zona["fundo"], preco - margem)
+                zona["topo"] = max(zona["topo"], preco + margem)
+                zona["ultimo_toque"] = idx
+                return
+        zonas.append({"tipo": tipo, "fundo": preco - margem, "topo": preco + margem, "ultimo_toque": idx})
+
+    for i in range(4, n):
+        if fractal_alta[i]:
+            registrar_pivot("resistencia", valor_fractal_alta[i], atr[i - 2], i - 2)
+        if fractal_baixa[i]:
+            registrar_pivot("suporte", valor_fractal_baixa[i], atr[i - 2], i - 2)
+
+        zonas[:] = [z for z in zonas if i - z["ultimo_toque"] <= max_idade_zona]
+
+        for zona in zonas:
+            if zona["tipo"] == "resistencia" and close[i] > zona["topo"]:
+                zona["tipo"] = "suporte"
+                zona["ultimo_toque"] = i
+            elif zona["tipo"] == "suporte" and close[i] < zona["fundo"]:
+                zona["tipo"] = "resistencia"
+                zona["ultimo_toque"] = i
+
+        if pendente is not None:
+            if i - pendente["criado_em"] > validade_pendente:
+                pendente = None
+            elif pendente["tipo"] == "compra":
+                if low[i] < pendente["zona_fundo"]:
+                    pendente = None
+                elif high[i] >= pendente["trigger"]:
+                    compra_forte[i] = True
+                    entrada_compra[i] = pendente["trigger"]
+                    sl_compra[i] = pendente["sl"]
+                    tp_compra[i] = pendente["tp"]
+                    pendente = None
+            else:
+                if high[i] > pendente["zona_topo"]:
+                    pendente = None
+                elif low[i] <= pendente["trigger"]:
+                    venda_forte[i] = True
+                    entrada_venda[i] = pendente["trigger"]
+                    sl_venda[i] = pendente["sl"]
+                    tp_venda[i] = pendente["tp"]
+                    pendente = None
+
+        if pendente is None and not compra_forte[i] and not venda_forte[i]:
+            atr_i = atr[i]
+            if not np.isnan(atr_i) and atr_i > 0:
+                if ema_fast[i] > ema_slow[i]:
+                    for zona in zonas:
+                        if zona["tipo"] == "suporte" and low[i] <= zona["topo"] and high[i] >= zona["fundo"]:
+                            gatilho = max(zona["topo"], high[i]) + atr_i * buffer_trigger_atr
+                            candidatos = [z["fundo"] for z in zonas if z["tipo"] == "resistencia" and z["fundo"] > gatilho]
+                            alvo = min(candidatos) if candidatos else gatilho + (gatilho - zona["fundo"]) * 2
+                            pendente = {
+                                "tipo": "compra", "trigger": gatilho, "sl": zona["fundo"], "tp": alvo,
+                                "zona_fundo": zona["fundo"], "criado_em": i,
+                            }
+                            break
+                elif ema_fast[i] < ema_slow[i]:
+                    for zona in zonas:
+                        if zona["tipo"] == "resistencia" and high[i] >= zona["fundo"] and low[i] <= zona["topo"]:
+                            gatilho = min(zona["fundo"], low[i]) - atr_i * buffer_trigger_atr
+                            candidatos = [z["topo"] for z in zonas if z["tipo"] == "suporte" and z["topo"] < gatilho]
+                            alvo = max(candidatos) if candidatos else gatilho - (zona["topo"] - gatilho) * 2
+                            pendente = {
+                                "tipo": "venda", "trigger": gatilho, "sl": zona["topo"], "tp": alvo,
+                                "zona_topo": zona["topo"], "criado_em": i,
+                            }
+                            break
+
+    df["compra_forte"] = compra_forte
+    df["venda_forte"] = venda_forte
+    df["entrada_compra"] = entrada_compra
+    df["sl_compra"] = sl_compra
+    df["tp_compra"] = tp_compra
+    df["entrada_venda"] = entrada_venda
+    df["sl_venda"] = sl_venda
+    df["tp_venda"] = tp_venda
     return df
 
 
@@ -157,6 +297,7 @@ ESTRATEGIAS = {
     "sniper": aplicar_estrategia_sniper,
     "fibonacci": aplicar_estrategia_fibonacci,
     "williams": aplicar_estrategia_williams,
+    "sr_zonas": aplicar_estrategia_sr_zonas,
 }
 
 
@@ -217,13 +358,12 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
         if not (compra_forte or venda_forte):
             continue
 
-        entrada = row["close"]
         if compra_forte:
-            sl, tp = row["sl_compra"], row["tp_compra"]
+            entrada, sl, tp = row["entrada_compra"], row["sl_compra"], row["tp_compra"]
         else:
-            sl, tp = row["sl_venda"], row["tp_venda"]
+            entrada, sl, tp = row["entrada_venda"], row["sl_venda"], row["tp_venda"]
 
-        if pd.isna(sl) or pd.isna(tp):
+        if pd.isna(entrada) or pd.isna(sl) or pd.isna(tp):
             continue
 
         risco_distancia = abs(entrada - sl)
@@ -295,6 +435,14 @@ def main():
     parser.add_argument("--atr-periodo", type=int, default=14)
     parser.add_argument("--fib-lookback", type=int, default=20,
                          help="[fibonacci] nº de barras usado para achar o swing high/low")
+    parser.add_argument("--sr-margem-atr", type=float, default=0.15,
+                         help="[sr_zonas] meia-largura da zona de suporte/resistência, em múltiplos do ATR")
+    parser.add_argument("--sr-merge-tol-atr", type=float, default=0.5,
+                         help="[sr_zonas] distância (em ATR) para agrupar pivôs na mesma zona")
+    parser.add_argument("--sr-buffer-atr", type=float, default=0.1,
+                         help="[sr_zonas] distância do gatilho do buy/sell stop além do teste da zona, em ATR")
+    parser.add_argument("--sr-validade-pendente", type=int, default=5,
+                         help="[sr_zonas] nº de barras que a ordem pendente fica armada antes de cancelar")
     parser.add_argument("--dias", type=float, default=None,
                          help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
                               "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
@@ -321,6 +469,14 @@ def main():
             df = calcular_indicadores(df, args.ema_rapida, args.ema_lenta, args.rsi_periodo, args.atr_periodo)
             if args.estrategia == "fibonacci":
                 df = aplicar_estrategia(df, args.fib_lookback)
+            elif args.estrategia == "sr_zonas":
+                df = aplicar_estrategia(
+                    df,
+                    margem_atr=args.sr_margem_atr,
+                    merge_tol_atr=args.sr_merge_tol_atr,
+                    buffer_trigger_atr=args.sr_buffer_atr,
+                    validade_pendente=args.sr_validade_pendente,
+                )
             else:
                 df = aplicar_estrategia(df)
             if args.dias is not None:
