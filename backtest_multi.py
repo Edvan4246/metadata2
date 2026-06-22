@@ -9,6 +9,7 @@ Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia sr_zonas
     python3 backtest_multi.py --data-dir ./historico --estrategia crt
     python3 backtest_multi.py --data-dir ./historico --estrategia auto
+    python3 backtest_multi.py --data-dir ./historico --estrategia auto --apenas-confirmados
 
 Lê um CSV por símbolo (colunas: time,open,high,low,close,volume) e imprime
 uma tabela comparativa de desempenho por símbolo, ordenada por retorno.
@@ -440,6 +441,32 @@ MAPA_AUTO = {
 }
 ESTRATEGIA_AUTO_PADRAO = "sr_zonas"
 
+# Classificação por símbolo com base no fator de lucro no histórico completo
+# (sr_zonas/crt, full-period): "confirmado" quando ficou claramente acima de
+# 1.0 (>= ~1.05), "sem_edge" quando ficou em torno ou abaixo do empate. Não é
+# validação fora da amostra — é só uma marcação honesta de quais símbolos
+# têm sinal forte o bastante pra valer atenção, vs. quais não mostraram
+# vantagem real até agora. Ver --apenas-confirmados.
+CONFIANCA = {
+    "USDCAD_PERIOD_M5": "confirmado",
+    "XAGUSD.c_PERIOD_M5": "confirmado",
+    "XAUUSD.c_PERIOD_M5": "confirmado",
+    "USDJPY_PERIOD_M5": "confirmado",
+    "AUDUSD_PERIOD_M5": "confirmado",
+    "GBPJPY.c_PERIOD_M5": "confirmado",
+    "GBPUSD_PERIOD_M5": "confirmado",
+    "EURUSD_PERIOD_M5": "confirmado",
+    "XAUUSD.c_PERIOD_H1": "confirmado",
+    "USDCAD_PERIOD_H1": "confirmado",
+    "XAGUSD.c_PERIOD_H1": "confirmado",
+    "GBPUSD_PERIOD_H1": "sem_edge",
+    "EURUSD_PERIOD_H1": "sem_edge",
+    "AUDUSD_PERIOD_H1": "sem_edge",
+    "USDJPY_PERIOD_H1": "sem_edge",
+    "GBPJPY.c_PERIOD_H1": "sem_edge",
+}
+CONFIANCA_PADRAO = "sem_edge"
+
 
 def aplicar_estrategia_por_nome(df, nome, args):
     aplicar = ESTRATEGIAS[nome]
@@ -688,12 +715,25 @@ def main():
                               "se confirma numa janela recente fora da amostra usada pra montá-lo")
     parser.add_argument("--dias-teste", type=float, default=180,
                          help="[--validar-auto] tamanho da janela recente (em dias) usada como teste fora da amostra; padrão 180 (~6 meses)")
+    parser.add_argument("--apenas-confirmados", action="store_true",
+                         help="testa só os símbolos marcados como 'confirmado' em CONFIANCA "
+                              "(fator de lucro claramente acima de 1.0 no histórico completo); "
+                              "ignora os demais, inclusive símbolos fora do mapa")
     args = parser.parse_args()
 
     arquivos = sorted(glob.glob(os.path.join(args.data_dir, "*.csv")))
     if not arquivos:
         print(f"Nenhum CSV encontrado em {args.data_dir}")
         return
+
+    if args.apenas_confirmados:
+        arquivos = [
+            caminho for caminho in arquivos
+            if CONFIANCA.get(os.path.splitext(os.path.basename(caminho))[0], CONFIANCA_PADRAO) == "confirmado"
+        ]
+        if not arquivos:
+            print("Nenhum símbolo confirmado encontrado em --data-dir.")
+            return
 
     if args.validar_auto:
         linhas = validar_mapa_auto(arquivos, args)
@@ -730,6 +770,7 @@ def main():
             resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial)
             resultado["simbolo"] = simbolo
             resultado["estrategia"] = nome_estrategia
+            resultado["confianca"] = CONFIANCA.get(simbolo, CONFIANCA_PADRAO)
             resultados.append(resultado)
         except Exception as e:
             print(f"Erro ao processar {simbolo}: {e}")
@@ -743,6 +784,7 @@ def main():
     colunas = ["simbolo", "trades", "win_rate_pct", "retorno_pct", "max_drawdown_pct", "fator_lucro"]
     if args.estrategia == "auto":
         colunas.append("estrategia")
+    colunas.append("confianca")
     largura = {c: max(len(c), max(len(str(r[c])) for r in resultados)) for c in colunas}
 
     cabecalho = " | ".join(c.ljust(largura[c]) for c in colunas)
