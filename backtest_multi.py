@@ -8,6 +8,7 @@ Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia williams
     python3 backtest_multi.py --data-dir ./historico --estrategia sr_zonas
     python3 backtest_multi.py --data-dir ./historico --estrategia crt
+    python3 backtest_multi.py --data-dir ./historico --estrategia auto
 
 Lê um CSV por símbolo (colunas: time,open,high,low,close,volume) e imprime
 uma tabela comparativa de desempenho por símbolo, ordenada por retorno.
@@ -402,6 +403,54 @@ ESTRATEGIAS = {
     "crt": aplicar_estrategia_crt,
 }
 
+# Mapa símbolo -> estratégia (sr_zonas ou crt) com melhor fator de lucro nos
+# backtests comparativos feitos sobre o histórico atual. Escolhido por
+# inspeção manual dos resultados, não por validação fora da amostra: é um
+# ajuste no mesmo período de dados usado pra decidir, então a divisão pode
+# não se repetir em dados futuros. Símbolos fora do mapa caem no padrão.
+MAPA_AUTO = {
+    "XAUUSD.c_PERIOD_H1": "sr_zonas",
+    "XAUUSD.c_PERIOD_M5": "sr_zonas",
+    "USDCAD_PERIOD_H1": "sr_zonas",
+    "XAGUSD.c_PERIOD_H1": "sr_zonas",
+    "GBPJPY.c_PERIOD_M5": "sr_zonas",
+    "GBPUSD_PERIOD_M5": "sr_zonas",
+    "EURUSD_PERIOD_M5": "sr_zonas",
+    "AUDUSD_PERIOD_H1": "sr_zonas",
+    "USDCAD_PERIOD_M5": "crt",
+    "XAGUSD.c_PERIOD_M5": "crt",
+    "GBPUSD_PERIOD_H1": "crt",
+    "USDJPY_PERIOD_M5": "crt",
+    "AUDUSD_PERIOD_M5": "crt",
+    "EURUSD_PERIOD_H1": "crt",
+    "USDJPY_PERIOD_H1": "crt",
+    "GBPJPY.c_PERIOD_H1": "crt",
+}
+ESTRATEGIA_AUTO_PADRAO = "sr_zonas"
+
+
+def aplicar_estrategia_por_nome(df, nome, args):
+    aplicar = ESTRATEGIAS[nome]
+    if nome == "fibonacci":
+        return aplicar(df, args.fib_lookback)
+    if nome == "sr_zonas":
+        return aplicar(
+            df,
+            margem_atr=args.sr_margem_atr,
+            merge_tol_atr=args.sr_merge_tol_atr,
+            buffer_trigger_atr=args.sr_buffer_atr,
+            validade_pendente=args.sr_validade_pendente,
+            rr_minimo=args.sr_rr_minimo,
+        )
+    if nome == "crt":
+        return aplicar(
+            df,
+            buffer_atr=args.crt_buffer_atr,
+            validade_pendente=args.crt_validade_pendente,
+            rr_minimo=args.crt_rr_minimo,
+        )
+    return aplicar(df)
+
 
 def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital_inicial):
     df = df.reset_index(drop=True)
@@ -529,8 +578,9 @@ def filtrar_ultimos_dias(df, dias):
 def main():
     parser = argparse.ArgumentParser(description="Backtest multi-símbolo com múltiplas estratégias")
     parser.add_argument("--data-dir", required=True, help="pasta com um CSV por símbolo")
-    parser.add_argument("--estrategia", choices=sorted(ESTRATEGIAS), default="sniper",
-                         help="lógica de entrada/saída a testar")
+    parser.add_argument("--estrategia", choices=sorted(list(ESTRATEGIAS) + ["auto"]), default="sniper",
+                         help="lógica de entrada/saída a testar. 'auto' escolhe por símbolo entre "
+                              "sr_zonas/crt conforme o MAPA_AUTO (melhor fator de lucro observado)")
     parser.add_argument("--ema-rapida", type=int, default=9)
     parser.add_argument("--ema-lenta", type=int, default=21)
     parser.add_argument("--rsi-periodo", type=int, default=14)
@@ -569,38 +619,22 @@ def main():
         print(f"Nenhum CSV encontrado em {args.data_dir}")
         return
 
-    aplicar_estrategia = ESTRATEGIAS[args.estrategia]
-
     resultados = []
     for caminho in arquivos:
         simbolo = os.path.splitext(os.path.basename(caminho))[0]
         try:
             df = carregar_csv(caminho)
             df = calcular_indicadores(df, args.ema_rapida, args.ema_lenta, args.rsi_periodo, args.atr_periodo)
-            if args.estrategia == "fibonacci":
-                df = aplicar_estrategia(df, args.fib_lookback)
-            elif args.estrategia == "sr_zonas":
-                df = aplicar_estrategia(
-                    df,
-                    margem_atr=args.sr_margem_atr,
-                    merge_tol_atr=args.sr_merge_tol_atr,
-                    buffer_trigger_atr=args.sr_buffer_atr,
-                    validade_pendente=args.sr_validade_pendente,
-                    rr_minimo=args.sr_rr_minimo,
-                )
-            elif args.estrategia == "crt":
-                df = aplicar_estrategia(
-                    df,
-                    buffer_atr=args.crt_buffer_atr,
-                    validade_pendente=args.crt_validade_pendente,
-                    rr_minimo=args.crt_rr_minimo,
-                )
+            if args.estrategia == "auto":
+                nome_estrategia = MAPA_AUTO.get(simbolo, ESTRATEGIA_AUTO_PADRAO)
             else:
-                df = aplicar_estrategia(df)
+                nome_estrategia = args.estrategia
+            df = aplicar_estrategia_por_nome(df, nome_estrategia, args)
             if args.dias is not None:
                 df = filtrar_ultimos_dias(df, args.dias)
             resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial)
             resultado["simbolo"] = simbolo
+            resultado["estrategia"] = nome_estrategia
             resultados.append(resultado)
         except Exception as e:
             print(f"Erro ao processar {simbolo}: {e}")
@@ -612,6 +646,8 @@ def main():
     print(f"Estratégia: {args.estrategia}\n")
 
     colunas = ["simbolo", "trades", "win_rate_pct", "retorno_pct", "max_drawdown_pct", "fator_lucro"]
+    if args.estrategia == "auto":
+        colunas.append("estrategia")
     largura = {c: max(len(c), max(len(str(r[c])) for r in resultados)) for c in colunas}
 
     cabecalho = " | ".join(c.ljust(largura[c]) for c in colunas)
