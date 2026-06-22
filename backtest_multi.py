@@ -272,7 +272,16 @@ def carregar_csv(caminho):
     faltando = {"time", "open", "high", "low", "close"} - set(df.columns)
     if faltando:
         raise ValueError(f"colunas faltando: {faltando}")
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
     return df
+
+
+def filtrar_ultimos_dias(df, dias):
+    fim = df["time"].max()
+    if pd.isna(fim):
+        return df
+    inicio = fim - pd.Timedelta(days=dias)
+    return df[df["time"] > inicio].reset_index(drop=True)
 
 
 def main():
@@ -286,6 +295,9 @@ def main():
     parser.add_argument("--atr-periodo", type=int, default=14)
     parser.add_argument("--fib-lookback", type=int, default=20,
                          help="[fibonacci] nº de barras usado para achar o swing high/low")
+    parser.add_argument("--dias", type=float, default=None,
+                         help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
+                              "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
     parser.add_argument("--risco-pct", type=float, default=1.0)
     parser.add_argument("--custo-pct-risco", type=float, default=5.0,
                          help="custo (comissão) por trade, como %% do valor arriscado na operação")
@@ -311,6 +323,8 @@ def main():
                 df = aplicar_estrategia(df, args.fib_lookback)
             else:
                 df = aplicar_estrategia(df)
+            if args.dias is not None:
+                df = filtrar_ultimos_dias(df, args.dias)
             resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial)
             resultado["simbolo"] = simbolo
             resultados.append(resultado)
