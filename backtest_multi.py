@@ -557,6 +557,65 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
     }
 
 
+def _fator_lucro_ordenavel(fator_lucro):
+    return float("inf") if isinstance(fator_lucro, str) else fator_lucro
+
+
+def validar_mapa_auto(arquivos, args):
+    """Roda sr_zonas e crt, separadamente, só na janela mais recente
+    (args.dias_teste, fora da amostra usada pra montar o MAPA_AUTO) e
+    compara qual teria vencido nesse período contra o que está fixado no
+    mapa. Serve pra checar se a escolha por símbolo é robusta ou só
+    ajuste ao período usado para decidir."""
+    linhas = []
+    for caminho in arquivos:
+        simbolo = os.path.splitext(os.path.basename(caminho))[0]
+        try:
+            df_completo = carregar_csv(caminho)
+            df_completo = calcular_indicadores(df_completo, args.ema_rapida, args.ema_lenta, args.rsi_periodo, args.atr_periodo)
+            df_teste = filtrar_ultimos_dias(df_completo, args.dias_teste)
+            if df_teste.empty:
+                continue
+
+            resultados_periodo = {}
+            for nome in ("sr_zonas", "crt"):
+                df_aplicado = aplicar_estrategia_por_nome(df_teste.copy(), nome, args)
+                resultados_periodo[nome] = backtest_simbolo(
+                    df_aplicado, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial
+                )
+
+            fl_sr = resultados_periodo["sr_zonas"]["fator_lucro"]
+            fl_crt = resultados_periodo["crt"]["fator_lucro"]
+            sr_val = _fator_lucro_ordenavel(fl_sr)
+            crt_val = _fator_lucro_ordenavel(fl_crt)
+            if sr_val > crt_val:
+                vencedor_periodo = "sr_zonas"
+            elif crt_val > sr_val:
+                vencedor_periodo = "crt"
+            else:
+                vencedor_periodo = "empate"
+
+            estrategia_mapa = MAPA_AUTO.get(simbolo, ESTRATEGIA_AUTO_PADRAO)
+            if vencedor_periodo == "empate":
+                bateu = "empate"
+            else:
+                bateu = "sim" if vencedor_periodo == estrategia_mapa else "nao"
+
+            linhas.append({
+                "simbolo": simbolo,
+                "trades_sr": resultados_periodo["sr_zonas"]["trades"],
+                "fl_sr": fl_sr,
+                "trades_crt": resultados_periodo["crt"]["trades"],
+                "fl_crt": fl_crt,
+                "estrategia_mapa": estrategia_mapa,
+                "vencedor_periodo": vencedor_periodo,
+                "bateu_mapa": bateu,
+            })
+        except Exception as e:
+            print(f"Erro ao validar {simbolo}: {e}")
+    return linhas
+
+
 def carregar_csv(caminho):
     df = pd.read_csv(caminho)
     df.columns = [c.strip().lower() for c in df.columns]
@@ -612,11 +671,35 @@ def main():
     parser.add_argument("--slippage-pct-risco", type=float, default=2.0,
                          help="slippage na saída, como %% da distância entrada-stop da operação")
     parser.add_argument("--capital-inicial", type=float, default=1000.0)
+    parser.add_argument("--validar-auto", action="store_true",
+                         help="em vez de simular, testa se o MAPA_AUTO (sr_zonas vs crt por símbolo) "
+                              "se confirma numa janela recente fora da amostra usada pra montá-lo")
+    parser.add_argument("--dias-teste", type=float, default=180,
+                         help="[--validar-auto] tamanho da janela recente (em dias) usada como teste fora da amostra; padrão 180 (~6 meses)")
     args = parser.parse_args()
 
     arquivos = sorted(glob.glob(os.path.join(args.data_dir, "*.csv")))
     if not arquivos:
         print(f"Nenhum CSV encontrado em {args.data_dir}")
+        return
+
+    if args.validar_auto:
+        linhas = validar_mapa_auto(arquivos, args)
+        if not linhas:
+            print("Nenhum resultado gerado.")
+            return
+        print(f"Validação do MAPA_AUTO nos últimos {args.dias_teste:g} dias (capital inicial ${args.capital_inicial:g})\n")
+        colunas = ["simbolo", "trades_sr", "fl_sr", "trades_crt", "fl_crt", "estrategia_mapa", "vencedor_periodo", "bateu_mapa"]
+        largura = {c: max(len(c), max(len(str(r[c])) for r in linhas)) for c in colunas}
+        cabecalho = " | ".join(c.ljust(largura[c]) for c in colunas)
+        print(cabecalho)
+        print("-" * len(cabecalho))
+        for r in sorted(linhas, key=lambda x: x["simbolo"]):
+            print(" | ".join(str(r[c]).ljust(largura[c]) for c in colunas))
+        total = len(linhas)
+        bateram = sum(1 for r in linhas if r["bateu_mapa"] == "sim")
+        empates = sum(1 for r in linhas if r["bateu_mapa"] == "empate")
+        print(f"\n{bateram}/{total} confirmaram a escolha do MAPA_AUTO ({empates} empate(s))")
         return
 
     resultados = []
