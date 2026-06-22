@@ -39,7 +39,7 @@ def calcular_indicadores(df, ema_rapida, ema_lenta, rsi_periodo, atr_periodo):
     return df
 
 
-def backtest_simbolo(df, risco_pct, comissao_pct, slippage_pct, capital_inicial):
+def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_atr, capital_inicial):
     df = df.reset_index(drop=True)
     equity = capital_inicial
     pico_equity = capital_inicial
@@ -66,15 +66,18 @@ def backtest_simbolo(df, risco_pct, comissao_pct, slippage_pct, capital_inicial)
                     preco_saida, saiu = posicao["tp"], True
 
             if saiu:
-                fator_slip = 1 - slippage_pct / 100 if posicao["tipo"] == "compra" else 1 + slippage_pct / 100
-                preco_saida_ajustado = preco_saida * fator_slip
-
+                # Slippage e comissão são proporcionais ao risco da operação
+                # (não ao valor nocional), para que o custo seja comparável
+                # entre ativos com escalas de preço muito diferentes.
+                deslizamento = posicao["atr_entrada"] * (slippage_pct_atr / 100)
                 if posicao["tipo"] == "compra":
+                    preco_saida_ajustado = preco_saida - deslizamento
                     resultado = (preco_saida_ajustado - posicao["entrada"]) * posicao["qty"]
                 else:
+                    preco_saida_ajustado = preco_saida + deslizamento
                     resultado = (posicao["entrada"] - preco_saida_ajustado) * posicao["qty"]
 
-                custo_comissao = (posicao["entrada"] + preco_saida_ajustado) * posicao["qty"] * (comissao_pct / 100)
+                custo_comissao = posicao["risco_valor"] * (custo_pct_risco / 100)
                 resultado -= custo_comissao
 
                 equity += resultado
@@ -118,6 +121,8 @@ def backtest_simbolo(df, risco_pct, comissao_pct, slippage_pct, capital_inicial)
                 "sl": row["close"] - row["atr"],
                 "tp": row["close"] + row["atr"] * 2,
                 "qty": qty,
+                "atr_entrada": row["atr"],
+                "risco_valor": risco_valor,
             }
         else:
             posicao = {
@@ -126,6 +131,8 @@ def backtest_simbolo(df, risco_pct, comissao_pct, slippage_pct, capital_inicial)
                 "sl": row["close"] + row["atr"],
                 "tp": row["close"] - row["atr"] * 2,
                 "qty": qty,
+                "atr_entrada": row["atr"],
+                "risco_valor": risco_valor,
             }
 
     total_trades = len(trades)
@@ -168,8 +175,10 @@ def main():
     parser.add_argument("--rsi-periodo", type=int, default=14)
     parser.add_argument("--atr-periodo", type=int, default=14)
     parser.add_argument("--risco-pct", type=float, default=1.0)
-    parser.add_argument("--comissao-pct", type=float, default=0.03)
-    parser.add_argument("--slippage-pct", type=float, default=0.01)
+    parser.add_argument("--custo-pct-risco", type=float, default=5.0,
+                         help="custo (comissão) por trade, como %% do valor arriscado na operação")
+    parser.add_argument("--slippage-pct-atr", type=float, default=2.0,
+                         help="slippage na saída, como %% do ATR da operação")
     parser.add_argument("--capital-inicial", type=float, default=1000.0)
     args = parser.parse_args()
 
@@ -184,7 +193,7 @@ def main():
         try:
             df = carregar_csv(caminho)
             df = calcular_indicadores(df, args.ema_rapida, args.ema_lenta, args.rsi_periodo, args.atr_periodo)
-            resultado = backtest_simbolo(df, args.risco_pct, args.comissao_pct, args.slippage_pct, args.capital_inicial)
+            resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_atr, args.capital_inicial)
             resultado["simbolo"] = simbolo
             resultados.append(resultado)
         except Exception as e:
