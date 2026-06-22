@@ -1,0 +1,372 @@
+//@version=5
+indicator("SNIPER EDITION TRADER PRO™️ V7", overlay=true, max_labels_count=500)
+
+//====================================================
+// CORES CYBER
+//====================================================
+verdeNeon = color.rgb(0,255,140)
+vermelhoNeon = color.rgb(255,40,40)
+azulNeon = color.rgb(0,180,255)
+preto = color.rgb(0,0,0)
+
+//====================================================
+// FUNDO PRETO
+//====================================================
+bgcolor(color.new(preto, 0))
+
+//====================================================
+// CONFIGURAÇÕES
+//====================================================
+emaRapida = input.int(9, title="EMA Rápida")
+emaLenta = input.int(21, title="EMA Lenta")
+
+rsiPeriodo = input.int(14, title="RSI")
+
+atrPeriodo = input.int(14, title="ATR")
+
+//====================================================
+// INDICADORES
+//====================================================
+emaFast = ta.ema(close, emaRapida)
+
+emaSlow = ta.ema(close, emaLenta)
+
+rsiValor = ta.rsi(close, rsiPeriodo)
+
+atrValor = ta.atr(atrPeriodo)
+
+//====================================================
+// TENDÊNCIA
+//====================================================
+tendenciaAlta = emaFast > emaSlow
+
+tendenciaBaixa = emaFast < emaSlow
+
+//====================================================
+// CRUZAMENTOS
+//====================================================
+cruzamentoCompra =
+ ta.crossover(emaFast, emaSlow)
+
+cruzamentoVenda =
+ ta.crossunder(emaFast, emaSlow)
+
+//====================================================
+// CANDLE FORTE
+//====================================================
+candleCompra =
+ close > open and
+ close > high[1]
+
+candleVenda =
+ close < open and
+ close < low[1]
+
+//====================================================
+// FILTRO RSI
+//====================================================
+rsiCompra = rsiValor > 50
+
+rsiVenda = rsiValor < 50
+
+//====================================================
+// SINAIS MAIS ASSERTIVOS
+//====================================================
+sinalCompra =
+ tendenciaAlta and
+ candleCompra and
+ rsiCompra
+
+sinalVenda =
+ tendenciaBaixa and
+ candleVenda and
+ rsiVenda
+
+//====================================================
+// COMPRA FORTE
+//====================================================
+compraForte =
+ sinalCompra and
+ close > emaFast
+
+//====================================================
+// VENDA FORTE
+//====================================================
+vendaForte =
+ sinalVenda and
+ close < emaFast
+
+//====================================================
+// TAKE PROFIT DINÂMICO
+//====================================================
+buyTP =
+ close + atrValor * 2
+
+buySL =
+ close - atrValor
+
+sellTP =
+ close - atrValor * 2
+
+sellSL =
+ close + atrValor
+
+//====================================================
+// FUNDO DINÂMICO
+//====================================================
+bgcolor(
+ compraForte ?
+ color.new(verdeNeon, 93) :
+ vendaForte ?
+ color.new(vermelhoNeon, 93) :
+ na)
+
+//====================================================
+// BARRAS CYBER
+//====================================================
+barcolor(
+ compraForte ?
+ verdeNeon :
+ vendaForte ?
+ vermelhoNeon :
+ na)
+
+//====================================================
+// EMAS
+//====================================================
+plot(
+ emaFast,
+ color=verdeNeon,
+ linewidth=3)
+
+plot(
+ emaSlow,
+ color=vermelhoNeon,
+ linewidth=2)
+
+//====================================================
+// COMPRA
+//====================================================
+plotshape(
+ compraForte,
+ title="COMPRA",
+ location=location.belowbar,
+ style=shape.labelup,
+ color=verdeNeon,
+ text="COMPRA",
+ textcolor=color.black,
+ size=size.normal)
+
+//====================================================
+// VENDA
+//====================================================
+plotshape(
+ vendaForte,
+ title="VENDA",
+ location=location.abovebar,
+ style=shape.labeldown,
+ color=vermelhoNeon,
+ text="VENDA",
+ textcolor=color.white,
+ size=size.normal)
+
+//====================================================
+// TAKE PROFIT VISUAL
+//====================================================
+plot(
+ compraForte ? buyTP : na,
+ title="TP COMPRA",
+ color=color.new(verdeNeon, 0),
+ linewidth=2)
+
+plot(
+ compraForte ? buySL : na,
+ title="SL COMPRA",
+ color=color.new(vermelhoNeon, 0),
+ linewidth=1)
+
+plot(
+ vendaForte ? sellTP : na,
+ title="TP VENDA",
+ color=color.new(verdeNeon, 0),
+ linewidth=2)
+
+plot(
+ vendaForte ? sellSL : na,
+ title="SL VENDA",
+ color=color.new(vermelhoNeon, 0),
+ linewidth=1)
+
+//====================================================
+// ALERTAS
+//====================================================
+alertcondition(
+ compraForte,
+ title="ALERTA COMPRA",
+ message="SNIPER PRO DETECTOU COMPRA")
+
+alertcondition(
+ vendaForte,
+ title="ALERTA VENDA",
+ message="SNIPER PRO DETECTOU VENDA")
+
+//====================================================
+// SESSÃO
+//====================================================
+horaAtual = hour
+
+sessao =
+ horaAtual >= 9 and horaAtual <= 12 ?
+ "LONDRES" :
+ horaAtual >= 13 and horaAtual <= 17 ?
+ "NOVA YORK" :
+ "ÁSIA"
+
+//====================================================
+// FORÇA MERCADO
+//====================================================
+forcaMercado =
+ math.abs(emaFast - emaSlow)
+
+mercadoForte =
+ forcaMercado > atrValor * 0.2
+
+//====================================================
+// STATUS
+//====================================================
+statusAtual =
+ compraForte ?
+ "COMPRA" :
+ vendaForte ?
+ "VENDA" :
+ "AGUARDANDO"
+
+//====================================================
+// PAINEL HACKER
+//====================================================
+var table painel = table.new(position.top_right, 2, 7)
+
+if barstate.islast
+
+    table.cell(
+     painel,
+     0,
+     0,
+     "SNIPER PRO™️",
+     bgcolor=color.black,
+     text_color=verdeNeon)
+
+    table.cell(
+     painel,
+     1,
+     0,
+     "ONLINE",
+     bgcolor=color.black,
+     text_color=verdeNeon)
+
+    table.cell(
+     painel,
+     0,
+     1,
+     "TENDÊNCIA",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     1,
+     tendenciaAlta ? "ALTA" : "BAIXA",
+     bgcolor=color.black,
+     text_color=
+      tendenciaAlta ?
+      verdeNeon :
+      vermelhoNeon)
+
+    table.cell(
+     painel,
+     0,
+     2,
+     "RSI",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     2,
+     str.tostring(rsiValor, "#.0"),
+     bgcolor=color.black,
+     text_color=azulNeon)
+
+    table.cell(
+     painel,
+     0,
+     3,
+     "SESSÃO",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     3,
+     sessao,
+     bgcolor=color.black,
+     text_color=azulNeon)
+
+    table.cell(
+     painel,
+     0,
+     4,
+     "MERCADO",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     4,
+     mercadoForte ? "FORTE" : "FRACO",
+     bgcolor=color.black,
+     text_color=
+      mercadoForte ?
+      verdeNeon :
+      vermelhoNeon)
+
+    table.cell(
+     painel,
+     0,
+     5,
+     "ATR",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     5,
+     str.tostring(atrValor, "#.0"),
+     bgcolor=color.black,
+     text_color=azulNeon)
+
+    table.cell(
+     painel,
+     0,
+     6,
+     "STATUS",
+     bgcolor=color.black,
+     text_color=color.white)
+
+    table.cell(
+     painel,
+     1,
+     6,
+     statusAtual,
+     bgcolor=color.black,
+     text_color=
+      compraForte ?
+      verdeNeon :
+      vendaForte ?
+      vermelhoNeon :
+      azulNeon)
