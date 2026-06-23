@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Backtest multi-símbolo com múltiplas estratégias (Sniper Pro V7, Fibonacci,
-Bill Williams, Zonas de Suporte/Resistência, Candle Range Theory).
+Bill Williams, Zonas de Suporte/Resistência, Candle Range Theory, Liquidity Sweep).
 
 Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia sniper
@@ -8,6 +8,7 @@ Uso:
     python3 backtest_multi.py --data-dir ./historico --estrategia williams
     python3 backtest_multi.py --data-dir ./historico --estrategia sr_zonas
     python3 backtest_multi.py --data-dir ./historico --estrategia crt
+    python3 backtest_multi.py --data-dir ./historico --estrategia liquidez
     python3 backtest_multi.py --data-dir ./historico --estrategia auto
     python3 backtest_multi.py --data-dir ./historico --estrategia auto --apenas-confirmados
 
@@ -396,12 +397,144 @@ def aplicar_estrategia_crt(df, buffer_atr=0.1, validade_pendente=3, rr_minimo=1.
     return df
 
 
+def aplicar_estrategia_liquidez(df, buffer_atr=0.1, validade_pendente=3, rr_minimo=1.3, merge_tol_atr=0.5, max_idade_pool=200):
+    """Liquidity sweep / stop hunt (ICT): mantém uma lista de topos e fundos de
+    swing (fractais de 5 velas) ainda não "varridos", tratados como pontos
+    onde stops de outros traders estariam concentrados. Quando uma vela varre
+    (sweep) o ponto mais relevante com o pavio mas fecha de volta do lado de
+    dentro (rejeição), esse ponto é consumido e uma ordem pendente é armada no
+    rompimento da própria vela de rejeição, na direção contrária à varredura
+    — apostando que o movimento foi só pra caçar stops antes de reverter.
+    Stop além do pavio que varreu; alvo no próximo ponto de liquidez oposto
+    ainda não varrido, respeitando um risco:retorno mínimo (senão usa esse
+    mínimo direto). Diferente do CRT, que só olha o range da vela anterior,
+    aqui os pontos de liquidez são swings reais que podem ter se formado
+    várias velas atrás."""
+    n = len(df)
+    high = df["high"].values
+    low = df["low"].values
+    close = df["close"].values
+    open_ = df["open"].values
+    atr = df["atr"].values
+
+    fractal_alta = (
+        (df["high"].shift(2) > df["high"].shift(4))
+        & (df["high"].shift(2) > df["high"].shift(3))
+        & (df["high"].shift(2) > df["high"].shift(1))
+        & (df["high"].shift(2) > df["high"])
+    ).fillna(False).values
+    fractal_baixa = (
+        (df["low"].shift(2) < df["low"].shift(4))
+        & (df["low"].shift(2) < df["low"].shift(3))
+        & (df["low"].shift(2) < df["low"].shift(1))
+        & (df["low"].shift(2) < df["low"])
+    ).fillna(False).values
+    valor_fractal_alta = df["high"].shift(2).values
+    valor_fractal_baixa = df["low"].shift(2).values
+
+    compra_forte = np.zeros(n, dtype=bool)
+    venda_forte = np.zeros(n, dtype=bool)
+    entrada_compra = np.full(n, np.nan)
+    sl_compra = np.full(n, np.nan)
+    tp_compra = np.full(n, np.nan)
+    entrada_venda = np.full(n, np.nan)
+    sl_venda = np.full(n, np.nan)
+    tp_venda = np.full(n, np.nan)
+
+    pools = []  # {"tipo": "topo"/"fundo", "preco": float, "criado_em": idx}
+    pendente = None
+
+    def registrar_pool(tipo, preco, atr_local, idx):
+        if np.isnan(atr_local) or atr_local <= 0:
+            return
+        tol = atr_local * merge_tol_atr
+        for pool in pools:
+            if pool["tipo"] == tipo and abs(pool["preco"] - preco) <= tol:
+                pool["preco"] = preco
+                pool["criado_em"] = idx
+                return
+        pools.append({"tipo": tipo, "preco": preco, "criado_em": idx})
+
+    for i in range(4, n):
+        if fractal_alta[i]:
+            registrar_pool("topo", valor_fractal_alta[i], atr[i - 2], i - 2)
+        if fractal_baixa[i]:
+            registrar_pool("fundo", valor_fractal_baixa[i], atr[i - 2], i - 2)
+
+        pools[:] = [p for p in pools if i - p["criado_em"] <= max_idade_pool]
+
+        if pendente is not None:
+            if i - pendente["criado_em"] > validade_pendente:
+                pendente = None
+            elif pendente["tipo"] == "compra":
+                if low[i] < pendente["invalida"]:
+                    pendente = None
+                elif high[i] >= pendente["trigger"]:
+                    compra_forte[i] = True
+                    entrada_compra[i] = pendente["trigger"]
+                    sl_compra[i] = pendente["sl"]
+                    tp_compra[i] = pendente["tp"]
+                    pendente = None
+            else:
+                if high[i] > pendente["invalida"]:
+                    pendente = None
+                elif low[i] <= pendente["trigger"]:
+                    venda_forte[i] = True
+                    entrada_venda[i] = pendente["trigger"]
+                    sl_venda[i] = pendente["sl"]
+                    tp_venda[i] = pendente["tp"]
+                    pendente = None
+
+        if pendente is None and not compra_forte[i] and not venda_forte[i]:
+            atr_i = atr[i]
+            if not np.isnan(atr_i) and atr_i > 0:
+                candidatos_topo = [p for p in pools if p["tipo"] == "topo" and high[i] > p["preco"]]
+                if candidatos_topo:
+                    pool_alvo = max(candidatos_topo, key=lambda p: p["preco"])
+                    if close[i] < pool_alvo["preco"] and close[i] < open_[i]:
+                        gatilho = low[i] - atr_i * buffer_atr
+                        sl = high[i] + atr_i * buffer_atr
+                        sl_dist = sl - gatilho
+                        alvo_minimo = gatilho - sl_dist * rr_minimo
+                        candidatos_fundo = [p["preco"] for p in pools if p["tipo"] == "fundo" and p["preco"] < gatilho]
+                        alvo_pool = max(candidatos_fundo) if candidatos_fundo else None
+                        tp = alvo_pool if (alvo_pool is not None and alvo_pool <= alvo_minimo) else alvo_minimo
+                        pendente = {"tipo": "venda", "trigger": gatilho, "sl": sl, "invalida": sl, "tp": tp, "criado_em": i}
+                        pools[:] = [p for p in pools if not (p["tipo"] == "topo" and high[i] > p["preco"])]
+
+                if pendente is None:
+                    candidatos_fundo = [p for p in pools if p["tipo"] == "fundo" and low[i] < p["preco"]]
+                    if candidatos_fundo:
+                        pool_alvo = min(candidatos_fundo, key=lambda p: p["preco"])
+                        if close[i] > pool_alvo["preco"] and close[i] > open_[i]:
+                            gatilho = high[i] + atr_i * buffer_atr
+                            sl = low[i] - atr_i * buffer_atr
+                            sl_dist = gatilho - sl
+                            alvo_minimo = gatilho + sl_dist * rr_minimo
+                            candidatos_topo2 = [p["preco"] for p in pools if p["tipo"] == "topo" and p["preco"] > gatilho]
+                            alvo_pool = min(candidatos_topo2) if candidatos_topo2 else None
+                            tp = alvo_pool if (alvo_pool is not None and alvo_pool >= alvo_minimo) else alvo_minimo
+                            pendente = {"tipo": "compra", "trigger": gatilho, "sl": sl, "invalida": sl, "tp": tp, "criado_em": i}
+                            pools[:] = [p for p in pools if not (p["tipo"] == "fundo" and low[i] < p["preco"])]
+
+    df["compra_forte"] = compra_forte
+    df["venda_forte"] = venda_forte
+    df["entrada_compra"] = entrada_compra
+    df["sl_compra"] = sl_compra
+    df["tp_compra"] = tp_compra
+    df["entrada_venda"] = entrada_venda
+    df["sl_venda"] = sl_venda
+    df["tp_venda"] = tp_venda
+    return df
+
+
 ESTRATEGIAS = {
     "sniper": aplicar_estrategia_sniper,
     "fibonacci": aplicar_estrategia_fibonacci,
     "williams": aplicar_estrategia_williams,
     "sr_zonas": aplicar_estrategia_sr_zonas,
     "crt": aplicar_estrategia_crt,
+    "liquidez": aplicar_estrategia_liquidez,
 }
 
 # Mapa símbolo -> estratégia (sr_zonas ou crt), separado por timeframe porque
@@ -505,6 +638,15 @@ def aplicar_estrategia_por_nome(df, nome, args):
             buffer_atr=args.crt_buffer_atr,
             validade_pendente=args.crt_validade_pendente,
             rr_minimo=args.crt_rr_minimo,
+        )
+    if nome == "liquidez":
+        return aplicar(
+            df,
+            buffer_atr=args.liq_buffer_atr,
+            validade_pendente=args.liq_validade_pendente,
+            rr_minimo=args.liq_rr_minimo,
+            merge_tol_atr=args.liq_merge_tol_atr,
+            max_idade_pool=args.liq_max_idade_pool,
         )
     return aplicar(df)
 
@@ -740,6 +882,16 @@ def main():
                          help="[crt] nº de barras que a ordem pendente fica armada antes de cancelar")
     parser.add_argument("--crt-rr-minimo", type=float, default=1.3,
                          help="[crt] risco:retorno mínimo aceito; ignora o range como alvo se for mais próximo que isso")
+    parser.add_argument("--liq-buffer-atr", type=float, default=0.1,
+                         help="[liquidez] distância do gatilho/stop além da vela de rejeição, em ATR")
+    parser.add_argument("--liq-validade-pendente", type=int, default=3,
+                         help="[liquidez] nº de barras que a ordem pendente fica armada antes de cancelar")
+    parser.add_argument("--liq-rr-minimo", type=float, default=1.3,
+                         help="[liquidez] risco:retorno mínimo aceito; ignora o pool oposto como alvo se for mais próximo que isso")
+    parser.add_argument("--liq-merge-tol-atr", type=float, default=0.5,
+                         help="[liquidez] distância (em ATR) para agrupar pivôs no mesmo ponto de liquidez")
+    parser.add_argument("--liq-max-idade-pool", type=int, default=200,
+                         help="[liquidez] nº de barras que um ponto de liquidez fica válido antes de expirar sem ser varrido")
     parser.add_argument("--dias", type=float, default=None,
                          help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
                               "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
