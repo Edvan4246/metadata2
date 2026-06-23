@@ -49,11 +49,26 @@ mesmo tempo:
 2. A flag `--live` na linha de comando.
 3. A variável de ambiente `ARBITRAGE_BOT_LIVE_CONFIRM=I_UNDERSTAND_THE_RISK`.
 
-Faltando qualquer um dos três, o bot roda 100% em paper trading. As chaves de
-API (`{EXCHANGE_ID}_API_KEY` / `{EXCHANGE_ID}_API_SECRET`, ex:
-`BINANCE_API_KEY`) só são lidas do ambiente — nunca do arquivo de
-configuração — e devem ser chaves **somente de negociação**, sem permissão de
-saque.
+Faltando qualquer um dos três, o bot roda 100% em paper trading.
+
+### Gestão de chaves de API
+
+- **Nunca em texto puro no config**: as chaves (`{EXCHANGE_ID}_API_KEY` /
+  `{EXCHANGE_ID}_API_SECRET`, ex: `BINANCE_API_KEY`) só são lidas do
+  ambiente — nunca do arquivo de configuração — então não há risco de
+  comitar uma chave junto com `config/settings.yaml`.
+- **Suporte a `.env`**: copie `.env.example` para `.env` e preencha; o bot
+  carrega essas variáveis automaticamente ao iniciar
+  (`arbitrage_bot.live_executor.load_env_file`). `.env` já está no
+  `.gitignore` e uma variável já definida no ambiente do processo sempre tem
+  prioridade sobre o que está no arquivo.
+- **Chaves devem ser somente de negociação**: ao iniciar em modo live, o bot
+  chama `AuthenticatedExchangeClient.assert_trade_only_permissions()`, que
+  para Binance consulta as restrições reais da API key e **recusa subir** se
+  detectar permissão de saque (withdrawal) habilitada. Para outras exchanges
+  (sem endpoint equivalente ainda suportado aqui), o bot loga um aviso
+  pedindo confirmação manual no painel da exchange — configure a chave sem
+  permissão de saque por padrão, independente dessa checagem automática.
 
 Proteções da execução real:
 
@@ -64,7 +79,7 @@ Proteções da execução real:
 - **Vende exatamente o que comprou**: a perna de venda usa o valor
   efetivamente preenchido na compra, nunca o valor pretendido original —
   protege contra overselling em caso de preenchimento parcial.
-- **Aviso de exposição não hedgeada**: se a perda de venda preencher menos do
+- **Aviso de exposição não hedgeada**: se a perna de venda preencher menos do
   que foi comprado, o bot loga um aviso explícito para intervenção manual em
   vez de assumir que está tudo certo.
 

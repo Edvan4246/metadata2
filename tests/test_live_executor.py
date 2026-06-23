@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock
 
 import ccxt
@@ -13,12 +14,13 @@ from arbitrage_bot.live_executor import (
     LiveExecutionError,
     is_live_trading_enabled,
     load_credentials,
+    load_env_file,
 )
 
 
-def _client_with_mock_exchange() -> AuthenticatedExchangeClient:
+def _client_with_mock_exchange(exchange_id: str = "binance") -> AuthenticatedExchangeClient:
     client = AuthenticatedExchangeClient.__new__(AuthenticatedExchangeClient)
-    client.exchange_id = "binance"
+    client.exchange_id = exchange_id
     client.exchange = MagicMock()
     return client
 
@@ -176,3 +178,45 @@ def test_live_cross_exchange_executor_zero_buy_fill_raises():
         executor.execute("binance", "kraken", "BTC/USDT", 0.05)
 
     sell_client.exchange.create_order.assert_not_called()
+
+
+def test_assert_trade_only_permissions_raises_when_withdrawals_enabled():
+    client = _client_with_mock_exchange("binance")
+    client.exchange.sapiGetAccountApiRestrictions.return_value = {"enableWithdrawals": True}
+
+    with pytest.raises(LiveExecutionError):
+        client.assert_trade_only_permissions()
+
+
+def test_assert_trade_only_permissions_passes_when_withdrawals_disabled():
+    client = _client_with_mock_exchange("binance")
+    client.exchange.sapiGetAccountApiRestrictions.return_value = {"enableWithdrawals": False}
+
+    client.assert_trade_only_permissions()  # should not raise
+
+
+def test_assert_trade_only_permissions_does_not_block_on_check_failure(caplog):
+    client = _client_with_mock_exchange("binance")
+    client.exchange.sapiGetAccountApiRestrictions.side_effect = ccxt.NetworkError("timeout")
+
+    client.assert_trade_only_permissions()  # best-effort: warns, never raises on check failure
+
+
+def test_assert_trade_only_permissions_warns_for_unsupported_exchange(caplog):
+    client = _client_with_mock_exchange("kraken")
+
+    client.assert_trade_only_permissions()  # best-effort: warns, never raises
+
+    client.exchange.sapiGetAccountApiRestrictions.assert_not_called()
+
+
+def test_load_env_file_does_not_override_existing_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOME_TEST_VAR", "from_process_env")
+    env_file = tmp_path / ".env"
+    env_file.write_text("SOME_TEST_VAR=from_dotenv_file\n")
+    monkeypatch.chdir(tmp_path)
+
+    load_env_file()
+
+    assert os.environ["SOME_TEST_VAR"] == "from_process_env"
+    monkeypatch.delenv("SOME_TEST_VAR", raising=False)

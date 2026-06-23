@@ -6,11 +6,20 @@ import time
 from dataclasses import dataclass
 
 import ccxt
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 LIVE_CONFIRM_ENV_VAR = "ARBITRAGE_BOT_LIVE_CONFIRM"
 LIVE_CONFIRM_VALUE = "I_UNDERSTAND_THE_RISK"
+
+
+def load_env_file() -> None:
+    """Loads variables from a local `.env` file into the environment, if one
+    exists. Never overrides a variable already set in the process
+    environment, so a real deployment's secrets manager always wins over a
+    stray `.env` file."""
+    load_dotenv(override=False)
 
 
 class LiveExecutionError(Exception):
@@ -67,6 +76,43 @@ class AuthenticatedExchangeClient:
             {"apiKey": api_key, "secret": api_secret, "enableRateLimit": True}
         )
         self.exchange.load_markets()
+
+    def assert_trade_only_permissions(self) -> None:
+        """Best-effort check that the API key cannot withdraw funds, only
+        trade. A compromised or misissued key with withdrawal rights turns a
+        bug in this bot into a way to drain the account, not just lose
+        trading capital -- so this is checked eagerly at startup rather than
+        relying on the exchange dashboard being configured correctly.
+
+        Only implemented for Binance today (the only exchange with a stable
+        ccxt-exposed endpoint for this in this codebase); other exchanges log
+        a warning instead of silently assuming the key is safe.
+        """
+        if self.exchange_id != "binance":
+            logger.warning(
+                "Verificacao automatica de permissoes da API nao suportada para '%s'; "
+                "confirme manualmente no painel da exchange que esta chave NAO tem "
+                "permissao de saque (withdrawal).",
+                self.exchange_id,
+            )
+            return
+
+        try:
+            restrictions = self.exchange.sapiGetAccountApiRestrictions()
+        except ccxt.BaseError as exc:
+            logger.warning(
+                "Nao foi possivel verificar as permissoes da API key na Binance (%s); "
+                "confirme manualmente no painel que ela NAO tem permissao de saque.",
+                exc,
+            )
+            return
+
+        if restrictions.get("enableWithdrawals"):
+            raise LiveExecutionError(
+                "A API key da Binance tem permissao de SAQUE habilitada. Por seguranca, "
+                "crie uma chave nova com permissao apenas de negociacao (spot trading) "
+                "e desabilite o saque na chave atual."
+            )
 
     def create_market_order(self, symbol: str, side: str, amount: float) -> dict:
         """Places a real market order. Does not retry: an exception here may

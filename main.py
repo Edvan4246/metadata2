@@ -18,6 +18,7 @@ from arbitrage_bot.live_executor import (
     LiveExecutionError,
     is_live_trading_enabled,
     load_credentials,
+    load_env_file,
 )
 from arbitrage_bot.models import OrderBook, Opportunity
 from arbitrage_bot.opportunity_log import OpportunityLogger
@@ -85,7 +86,9 @@ class ArbitrageBot:
         try:
             for eid in self.settings.cross_exchange.exchanges:
                 api_key, api_secret = load_credentials(eid)
-                live_clients[eid] = AuthenticatedExchangeClient(eid, api_key, api_secret)
+                client = AuthenticatedExchangeClient(eid, api_key, api_secret)
+                client.assert_trade_only_permissions()
+                live_clients[eid] = client
         except LiveExecutionError as exc:
             raise RuntimeError(f"Nao foi possivel iniciar modo live: {exc}") from exc
 
@@ -323,6 +326,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    load_env_file()
     settings = Settings.load(args.config)
     logging.basicConfig(
         level=getattr(logging, settings.logging.level.upper(), logging.INFO),
