@@ -144,5 +144,73 @@ que este código não resolve totalmente por si só:
 
 Antes de operar com capital real de forma continuada, valide extensivamente em
 paper trading, comece com tamanhos de trade pequenos mesmo com o modo live
-ativo, monitore os logs de exposição não hedgeada, e faça validação
-jurídica/fiscal para a sua jurisdição.
+ativo, monitore os logs de exposição não hedgeada, e leia a seção abaixo.
+
+## Regulatório e fiscal no Brasil (leia antes de operar com dinheiro real)
+
+**Isto não é aconselhamento jurídico ou contábil — é um ponto de partida.**
+Fale com um contador especializado em criptoativos antes de operar com volume
+relevante; as regras abaixo mudam com frequência.
+
+### Você precisa de autorização do Banco Central?
+
+A Lei 14.478/2022 (Marco Legal dos Criptoativos) e a regulamentação do Banco
+Central exigem autorização para quem **presta serviço de ativos virtuais para
+terceiros** (exchanges, custodiantes, corretoras). Rodar este bot **na sua
+própria conta, com seu próprio capital**, não te torna uma prestadora de
+serviços — você é usuário final de uma exchange que já deve ter essa
+autorização (ou equivalente no exterior).
+
+Isso muda completamente se você:
+- operar com **dinheiro de terceiros** (amigos, "investidores", clientes) —
+  isso te coloca na esfera de gestão de recursos/CVM e exige estrutura
+  regulatória (ex: fundo de investimento, gestor autorizado) que este projeto
+  **não** provê. Não use este bot para gerir capital de terceiros sem isso.
+- oferecer o bot como serviço para outras pessoas operarem.
+
+### Imposto de Renda
+
+- **Ganho de capital, não "day trade" de bolsa**: criptoativos são tributados
+  como bens/direitos (IN RFB 1.888/2019), não como renda variável de ações.
+  Não existe alíquota fixa de "day trade" para cripto — cada alienação
+  (venda, troca por outra moeda, etc.) é apurada como ganho de capital.
+- **Isenção mensal de R$ 35.000**: se a soma de todas as vendas/alienações de
+  criptoativos no mês for **até R$ 35.000**, o ganho é isento de IR. Acima
+  disso, o ganho do mês inteiro é tributado (não só o excedente).
+- **Alíquotas progressivas** sobre o ganho do mês: 15% até R$ 5 milhões,
+  17,5% de R$ 5–10 milhões, 20% de R$ 10–30 milhões, 22,5% acima disso.
+- **Apuração mensal obrigatória**: use o programa GCAP da Receita Federal
+  para apurar o ganho de cada mês com operações tributáveis e pague o DARF
+  até o último dia útil do mês seguinte. Arbitragem com várias operações por
+  dia gera **muitas alienações por mês** — a apuração fica trabalhosa rápido;
+  o `data/trades.csv` que o bot já gera ajuda a reconstruir o histórico, mas
+  não substitui o cálculo de custo médio exigido pela Receita.
+- **Declaração mensal de operações com criptoativos**: se a movimentação
+  total do mês (em qualquer exchange, nacional ou estrangeira) passar de
+  R$ 30.000, há obrigação de declarar essas operações à Receita Federal
+  (IN RFB 1.888/2019), independente de ter dado lucro.
+- **Declaração anual (DIRPF)**: declare o saldo de criptoativos na ficha de
+  "Bens e Direitos" (códigos do grupo 08 — criptoativos), exchange por
+  exchange/carteira por carteira.
+- **Exchange estrangeira**: se usar uma exchange sem operação regulada no
+  Brasil, há discussão em aberto sobre se o saldo lá se enquadra nas regras
+  novas de tributação de "aplicações financeiras no exterior" (Lei
+  14.754/2023) em vez do regime de ganho de capital padrão. Esse ponto **não
+  é ainda totalmente assentado em normas/jurisprudência** — é exatamente o
+  tipo de coisa que precisa de um contador para a sua situação específica.
+- **Alta frequência pode virar "atividade empresarial"**: arbitragem
+  automatizada rodando 24/7 com volume alto pode ser interpretada pela
+  Receita como atividade habitual/profissional, sujeita a regras diferentes
+  (possivelmente exigindo CNPJ e tributação de pessoa jurídica em vez de
+  ganho de capital de pessoa física). Não há um limiar numérico oficial —
+  outro ponto para validar com contador antes de escalar volume.
+
+### Checklist mínimo antes de ligar o modo live
+
+- [ ] Conta(s) de exchange com KYC completo e verificado.
+- [ ] Conversa com contador especializado em criptoativos sobre seu caso.
+- [ ] Processo definido para apurar e pagar DARF mensal (GCAP) caso ultrapasse
+      R$ 35.000/mês em vendas.
+- [ ] Decisão sobre declarar operações mensais à RFB se movimentação > R$ 30.000/mês.
+- [ ] Confirmação de que está operando **só com capital próprio** (nunca de terceiros).
+- [ ] Revisão anual da Declaração de Bens e Direitos incluindo os criptoativos.
