@@ -21,8 +21,10 @@ _TRADE_FIELDS = [
 ]
 
 
-class PaperPortfolio:
-    """Simulates trade execution without touching real funds or real exchange APIs."""
+class _BasePortfolio:
+    """Shared bookkeeping: records pnl against the risk manager and appends to
+    the trades CSV log. Subclasses only differ in where the pnl figure comes
+    from (a prediction for paper trading, an actual fill for live trading)."""
 
     def __init__(self, risk_manager: RiskManager, trades_log_path: str):
         self.risk_manager = risk_manager
@@ -32,17 +34,16 @@ class PaperPortfolio:
             with self.trades_log_path.open("w", newline="") as f:
                 csv.DictWriter(f, fieldnames=_TRADE_FIELDS).writeheader()
 
-    def execute(self, opportunity: Opportunity, trade_size_base: float) -> Trade:
-        pnl_base = trade_size_base * opportunity.net_profit_pct
+    def _record(self, kind: str, description: str, trade_size_base: float, pnl_base: float, pnl_pct: float) -> Trade:
         self.risk_manager.record_pnl(pnl_base)
 
         trade = Trade(
             timestamp=datetime.now(timezone.utc),
-            kind=opportunity.kind,
-            description=opportunity.description,
+            kind=kind,
+            description=description,
             trade_size_base=trade_size_base,
             pnl_base=pnl_base,
-            pnl_pct=opportunity.net_profit_pct,
+            pnl_pct=pnl_pct,
             capital_after=self.risk_manager.capital,
         )
         self._append_log(trade)
@@ -62,3 +63,38 @@ class PaperPortfolio:
                     "capital_after": f"{trade.capital_after:.8f}",
                 }
             )
+
+
+class PaperPortfolio(_BasePortfolio):
+    """Simulates trade execution without touching real funds or real exchange APIs."""
+
+    def execute(self, opportunity: Opportunity, trade_size_base: float) -> Trade:
+        pnl_base = trade_size_base * opportunity.net_profit_pct
+        return self._record(
+            kind=opportunity.kind,
+            description=opportunity.description,
+            trade_size_base=trade_size_base,
+            pnl_base=pnl_base,
+            pnl_pct=opportunity.net_profit_pct,
+        )
+
+
+class LivePortfolio(_BasePortfolio):
+    """Records the outcome of a real trade already executed on the exchanges.
+
+    Unlike PaperPortfolio, the pnl here comes from what was actually filled
+    (quote spent vs. quote received), not from the opportunity's predicted
+    net_profit_pct -- real fills can differ from the prediction due to
+    slippage or partial fills.
+    """
+
+    def record_fill(self, kind: str, description: str, quote_spent: float, quote_received: float) -> Trade:
+        pnl_base = quote_received - quote_spent
+        pnl_pct = pnl_base / quote_spent if quote_spent > 0 else 0.0
+        return self._record(
+            kind=kind,
+            description=description,
+            trade_size_base=quote_spent,
+            pnl_base=pnl_base,
+            pnl_pct=pnl_pct,
+        )

@@ -43,6 +43,16 @@ class LoggingConfig:
 
 
 @dataclass
+class LiveConfig:
+    # Apenas um dos tres portoes exigidos para enviar ordens reais (ver
+    # arbitrage_bot/live_executor.is_live_trading_enabled). Os outros dois sao
+    # a flag --live na linha de comando e a variavel de ambiente
+    # ARBITRAGE_BOT_LIVE_CONFIRM. Os tres precisam estar ativos ao mesmo tempo.
+    enabled: bool = False
+    order_timeout_seconds: float = 10.0
+
+
+@dataclass
 class Settings:
     exchange_id: str
     base_currency: str
@@ -51,6 +61,7 @@ class Settings:
     risk: RiskConfig
     interval_seconds: int
     logging: LoggingConfig
+    live: LiveConfig = field(default_factory=LiveConfig)
 
     @staticmethod
     def load(path: str | Path) -> "Settings":
@@ -63,4 +74,5 @@ class Settings:
             risk=RiskConfig(**raw["risk"]),
             interval_seconds=raw["loop"]["interval_seconds"],
             logging=LoggingConfig(**raw["logging"]),
+            live=LiveConfig(**raw.get("live", {})),
         )

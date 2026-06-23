@@ -37,6 +37,37 @@ API de negociação é usada e nenhuma ordem real é enviada.
   de `rebalance_warning_pct` do alocado, sinalizando que é hora de transferir
   fundos manualmente para rebalancear.
 
+## Execução real (opcional, desligada por padrão)
+
+O módulo `arbitrage_bot/live_executor.py` implementa envio de ordens reais
+(apenas para arbitragem **entre exchanges** — triangular permanece sempre em
+paper trading nesta versão), mas fica travado por padrão. Para o bot enviar
+qualquer ordem real, **três portões independentes** precisam estar ativos ao
+mesmo tempo:
+
+1. `live.enabled: true` em `config/settings.yaml`.
+2. A flag `--live` na linha de comando.
+3. A variável de ambiente `ARBITRAGE_BOT_LIVE_CONFIRM=I_UNDERSTAND_THE_RISK`.
+
+Faltando qualquer um dos três, o bot roda 100% em paper trading. As chaves de
+API (`{EXCHANGE_ID}_API_KEY` / `{EXCHANGE_ID}_API_SECRET`, ex:
+`BINANCE_API_KEY`) só são lidas do ambiente — nunca do arquivo de
+configuração — e devem ser chaves **somente de negociação**, sem permissão de
+saque.
+
+Proteções da execução real:
+
+- **Sem retry automático de ordens**: um erro de rede ao criar uma ordem é
+  ambíguo (pode ou não ter chegado na exchange); o bot nunca tenta de novo
+  automaticamente, para não arriscar enviar a mesma ordem duas vezes
+  (`AuthenticatedExchangeClient.create_market_order`).
+- **Vende exatamente o que comprou**: a perna de venda usa o valor
+  efetivamente preenchido na compra, nunca o valor pretendido original —
+  protege contra overselling em caso de preenchimento parcial.
+- **Aviso de exposição não hedgeada**: se a perda de venda preencher menos do
+  que foi comprado, o bot loga um aviso explícito para intervenção manual em
+  vez de assumir que está tudo certo.
+
 ## Instalação
 
 ```bash
@@ -80,19 +111,23 @@ pytest
 
 ## Limitações importantes (leia antes de ir para produção)
 
-Este projeto é um **detector + simulador**, não um executor de ordens reais.
-Arbitragem real em cripto tem riscos que este código *não* resolve por si só:
+Por padrão este projeto é um **detector + simulador**. A execução real (seção
+acima) existe mas fica desligada até os três portões serem ativados
+deliberadamente. Mesmo com ela ativada, arbitragem real em cripto tem riscos
+que este código não resolve totalmente por si só:
 
-- **Execução real**: mesmo com a validação por profundidade, ordens reais podem
-  ter preenchimento parcial ou latência entre a leitura do book e o envio da
-  ordem — o preço pode mudar nesse intervalo, então a validação reduz mas não
-  elimina o risco de slippage.
+- **Slippage residual**: mesmo com a validação por profundidade e ordens
+  reais, ainda existe latência entre a leitura do book e o envio da ordem — o
+  preço pode mudar nesse intervalo.
+- **Triangular ainda não tem execução real**: nesta versão, só a arbitragem
+  entre exchanges tem o caminho de ordens reais implementado; triangular
+  permanece sempre em paper trading.
 - **Custos não modelados**: taxas de saque/rede e limites de rate limit das
   exchanges.
 - **Regulatório/KYC**: operar com dinheiro real em exchanges exige contas
   verificadas e conformidade com a regulamentação local.
 
-Antes de conectar isso a uma conta real, adicione: execução real com
-tratamento de erros e ordens parciais, gestão segura de chaves de API (nunca
-em texto puro), depósitos reais que correspondam ao `allocation` configurado,
-testes extensos em paper trading, e validação jurídica/fiscal.
+Antes de operar com capital real de forma continuada, valide extensivamente em
+paper trading, comece com tamanhos de trade pequenos mesmo com o modo live
+ativo, monitore os logs de exposição não hedgeada, e faça validação
+jurídica/fiscal para a sua jurisdição.
