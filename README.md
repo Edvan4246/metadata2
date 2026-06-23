@@ -118,6 +118,22 @@ python main.py --once
 python main.py --config minha_config.yaml
 ```
 
+## Dashboard de monitoramento
+
+```bash
+python dashboard.py
+# abre em http://127.0.0.1:8000
+```
+
+Mostra a curva de capital, últimos trades e últimas oportunidades detectadas,
+lendo direto de `data/trades.csv` / `data/opportunities.csv`. É **somente
+leitura**, sem autenticação e sem conceito de múltiplos usuários — uma janela
+para acompanhar a sua própria conta, não uma plataforma para investidores
+(ver a seção "Antes de pensar em captar capital de terceiros" abaixo). Por
+isso ele escuta só em `127.0.0.1` por padrão; se mudar `--host` para algo
+acessível pela rede, qualquer um que alcançar essa porta vê seus dados de
+trading sem login.
+
 ## Testes
 
 ```bash

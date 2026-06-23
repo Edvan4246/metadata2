@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Bot de Arbitragem - Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; margin: 0; padding: 24px; background: #0f1117; color: #e6e6e6; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #9aa0ab; font-size: 13px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .card { background: #1a1d27; border-radius: 8px; padding: 16px 20px; min-width: 160px; }
+  .card .label { color: #9aa0ab; font-size: 12px; text-transform: uppercase; }
+  .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .positive { color: #4ade80; }
+  .negative { color: #f87171; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 32px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2a2d3a; }
+  th { color: #9aa0ab; font-weight: 500; }
+  #chart-container { background: #1a1d27; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+  section h2 { font-size: 15px; color: #c7cad1; }
+</style>
+</head>
+<body>
+  <h1>Bot de Arbitragem &mdash; Dashboard (somente leitura)</h1>
+  <div class="subtitle">Monitoramento da sua propria conta/capital. Sem cadastro de investidores, sem deposito.</div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Capital atual</div><div class="value" id="capital">-</div></div>
+    <div class="card"><div class="label">PnL total</div><div class="value" id="pnl">-</div></div>
+    <div class="card"><div class="label">Trades</div><div class="value" id="total-trades">-</div></div>
+    <div class="card"><div class="label">Taxa de acerto</div><div class="value" id="win-rate">-</div></div>
+  </div>
+
+  <div id="chart-container">
+    <canvas id="capital-chart" height="80"></canvas>
+  </div>
+
+  <section>
+    <h2>Ultimos trades</h2>
+    <table id="trades-table">
+      <thead><tr><th>Quando</th><th>Tipo</th><th>Descricao</th><th>PnL</th><th>Capital apos</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Ultimas oportunidades detectadas</h2>
+    <table id="opportunities-table">
+      <thead><tr><th>Quando</th><th>Tipo</th><th>Descricao</th><th>Lucro liquido</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+<script>
+const fmtPct = (x) => (x * 100).toFixed(3) + '%';
+const fmtMoney = (x) => x.toFixed(2);
+
+let chart;
+
+async function refresh() {
+  const [summary, trades, opportunities] = await Promise.all([
+    fetch('/api/summary').then(r => r.json()),
+    fetch('/api/trades').then(r => r.json()),
+    fetch('/api/opportunities').then(r => r.json()),
+  ]);
+
+  document.getElementById('capital').textContent = summary.current_capital !== null ? fmtMoney(summary.current_capital) : '-';
+  const pnlEl = document.getElementById('pnl');
+  pnlEl.textContent = fmtMoney(summary.total_pnl_base);
+  pnlEl.className = 'value ' + (summary.total_pnl_base >= 0 ? 'positive' : 'negative');
+  document.getElementById('total-trades').textContent = summary.total_trades;
+  document.getElementById('win-rate').textContent = summary.win_rate !== null ? fmtPct(summary.win_rate) : '-';
+
+  const labels = summary.capital_curve.map(p => p.timestamp);
+  const data = summary.capital_curve.map(p => p.capital_after);
+  if (!chart) {
+    chart = new Chart(document.getElementById('capital-chart'), {
+      type: 'line',
+      data: { labels, datasets: [{ label: 'Capital', data, borderColor: '#4ade80', tension: 0.15, pointRadius: 0 }] },
+      options: { scales: { x: { display: false } }, plugins: { legend: { display: false } } },
+    });
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.update();
+  }
+
+  const tradesBody = document.querySelector('#trades-table tbody');
+  tradesBody.innerHTML = trades.map(t => `
+    <tr>
+      <td>${t.timestamp}</td>
+      <td>${t.kind}</td>
+      <td>${t.description}</td>
+      <td class="${t.pnl_base >= 0 ? 'positive' : 'negative'}">${fmtMoney(t.pnl_base)}</td>
+      <td>${fmtMoney(t.capital_after)}</td>
+    </tr>
+  `).join('');
+
+  const oppsBody = document.querySelector('#opportunities-table tbody');
+  oppsBody.innerHTML = opportunities.map(o => `
+    <tr>
+      <td>${o.timestamp}</td>
+      <td>${o.kind}</td>
+      <td>${o.description}</td>
+      <td class="${o.net_profit_pct >= 0 ? 'positive' : 'negative'}">${fmtPct(o.net_profit_pct)}</td>
+    </tr>
+  `).join('');
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>
