@@ -516,6 +516,7 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
     max_drawdown = 0.0
     posicao = None
     trades = []
+    conta_estourada = False
 
     for i in range(2, len(df)):
         row = df.iloc[i]
@@ -558,6 +559,15 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
         if pico_equity > 0:
             max_drawdown = max(max_drawdown, (pico_equity - equity) / pico_equity)
 
+        if equity <= 0:
+            # Conta quebrada: numa corretora real a operação seria liquidada
+            # por margem muito antes do saldo zerar. Sem isso, o loop seguia
+            # "operando" com saldo negativo e gerava drawdown >100% e retornos
+            # sem sentido.
+            conta_estourada = True
+            max_drawdown = 1.0
+            break
+
         if posicao is not None:
             continue
 
@@ -595,6 +605,12 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
             "risco_valor": risco_valor,
         }
 
+    if conta_estourada:
+        # Numa corretora real a posição seria liquidada por margem antes do
+        # saldo ficar negativo, então o pior resultado possível é perder
+        # 100% do capital, não mais que isso.
+        equity = max(equity, 0.0)
+
     total_trades = len(trades)
     vencedores = sum(1 for t in trades if t > 0)
     win_rate = (vencedores / total_trades * 100) if total_trades else 0.0
@@ -615,6 +631,7 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
         "retorno_pct": round(retorno_pct, 2),
         "max_drawdown_pct": round(max_drawdown * 100, 2),
         "fator_lucro": fator_lucro,
+        "conta_estourada": conta_estourada,
     }
 
 
@@ -814,6 +831,8 @@ def main():
     if args.estrategia == "auto":
         colunas.append("estrategia")
     colunas.append("confianca")
+    if args.lote is not None:
+        colunas.append("conta_estourada")
     largura = {c: max(len(c), max(len(str(r[c])) for r in resultados)) for c in colunas}
 
     cabecalho = " | ".join(c.ljust(largura[c]) for c in colunas)
