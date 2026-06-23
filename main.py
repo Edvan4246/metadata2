@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from dataclasses import replace
 from itertools import permutations
 
+from arbitrage_bot import depth_check
 from arbitrage_bot.config import Settings
 from arbitrage_bot.detectors import cross_exchange, triangular
 from arbitrage_bot.exchange_client import ExchangeClient
+from arbitrage_bot.models import OrderBook, Opportunity
 from arbitrage_bot.opportunity_log import OpportunityLogger
 from arbitrage_bot.portfolio import PaperPortfolio
 from arbitrage_bot.risk import RiskManager
@@ -90,17 +93,63 @@ class ArbitrageBot:
         self.opportunity_logger.log(opportunities)
 
         for opp in opportunities:
-            trade_size = self.risk_manager.evaluate(opp)
+            trade_size_quote = self.risk_manager.capital * self.risk_manager.max_trade_pct
+            if trade_size_quote <= 0:
+                continue
+
+            # The ticker scan above only sees the best bid/ask, not how much
+            # volume actually sits there. Re-check the real order book for the
+            # exact size we'd trade before trusting the opportunity.
+            realistic_net_profit_pct = self._validate_with_depth(opp, trade_size_quote)
+            if realistic_net_profit_pct is None:
+                logger.debug("Profundidade insuficiente para validar: %s", opp.description)
+                continue
+
+            validated_opp = replace(opp, net_profit_pct=realistic_net_profit_pct)
+            trade_size = self.risk_manager.evaluate(validated_opp)
             if trade_size is None:
                 continue
-            trade = self.portfolio.execute(opp, trade_size)
+            trade = self.portfolio.execute(validated_opp, trade_size)
             logger.info(
-                "Trade simulado [%s]: %s | lucro liquido %.4f%% | capital apos: %.2f",
+                "Trade simulado [%s]: %s | lucro liquido (validado no livro) %.4f%% | capital apos: %.2f",
                 trade.kind,
                 trade.description,
                 trade.pnl_pct * 100,
                 trade.capital_after,
             )
+
+    def _validate_with_depth(self, opp: Opportunity, trade_size_quote: float) -> float | None:
+        if opp.kind == "cross_exchange":
+            symbol = opp.details["symbol"]
+            buy_client = self.clients[opp.details["buy_exchange"]]
+            sell_client = self.clients[opp.details["sell_exchange"]]
+            buy_book = buy_client.fetch_order_book(symbol)
+            sell_book = sell_client.fetch_order_book(symbol)
+            if buy_book is None or sell_book is None:
+                return None
+            return depth_check.validate_cross_exchange(
+                buy_book, sell_book, trade_size_quote, self.settings.risk.taker_fee_pct
+            )
+
+        if opp.kind == "triangular":
+            base, x, y = opp.details["base"], opp.details["x"], opp.details["y"]
+            client = self.clients[self.settings.exchange_id]
+            symbols = set()
+            for a, b in ((base, x), (x, y), (y, base)):
+                symbols.add(f"{a}/{b}")
+                symbols.add(f"{b}/{a}")
+
+            books: dict[str, OrderBook] = {}
+            for symbol in symbols:
+                book = client.fetch_order_book(symbol)
+                if book is not None:
+                    books[symbol] = book
+
+            return depth_check.validate_triangular(
+                base, x, y, trade_size_quote, books, self.settings.risk.taker_fee_pct
+            )
+
+        return None
 
     def run(self, once: bool = False, max_iterations: int | None = None) -> None:
         iteration = 0

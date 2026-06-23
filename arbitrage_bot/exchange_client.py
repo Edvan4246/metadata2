@@ -4,7 +4,7 @@ import logging
 
 import ccxt
 
-from arbitrage_bot.models import Ticker
+from arbitrage_bot.models import OrderBook, Ticker
 
 logger = logging.getLogger(__name__)
 
@@ -37,3 +37,16 @@ class ExchangeClient:
                 continue
             result[symbol] = Ticker(bid=bid, ask=ask)
         return result
+
+    def fetch_order_book(self, symbol: str, depth: int = 20) -> OrderBook | None:
+        """Fetches real depth for a single symbol, used to validate a candidate
+        opportunity before committing to it (the cheap ticker scan only sees the
+        best bid/ask, not how much volume is actually available there)."""
+        if not self.has_symbol(symbol):
+            return None
+        raw = self.exchange.fetch_order_book(symbol, limit=depth)
+        asks = [(price, amount) for price, amount, *_ in raw.get("asks", [])]
+        bids = [(price, amount) for price, amount, *_ in raw.get("bids", [])]
+        if not asks or not bids:
+            return None
+        return OrderBook(asks=asks, bids=bids)

@@ -22,6 +22,13 @@ API de negociação é usada e nenhuma ordem real é enviada.
   `risk.max_daily_loss_pct`, o bot trava novas operações até o dia seguinte.
 - **Log de tudo**: toda oportunidade detectada (`data/opportunities.csv`) e todo
   trade simulado (`data/trades.csv`) ficam registrados para auditoria.
+- **Validação por profundidade do livro de ofertas**: o scan inicial usa
+  bid/ask (rápido, leve) só para achar candidatos. Antes de qualquer trade,
+  o bot busca o order book real dos pares envolvidos e recalcula o lucro
+  líquido simulando o preenchimento da ordem pelos níveis de profundidade
+  reais (`arbitrage_bot/depth_check.py`). Se a liquidez não suportar o
+  tamanho do trade, a oportunidade é descartada em vez de assumir que o
+  bid/ask aguenta o volume todo.
 
 ## Instalação
 
@@ -69,12 +76,12 @@ Arbitragem real em cripto tem riscos que este código *não* resolve por si só:
   ambas as exchanges *antes* da oportunidade aparecer — transferências on-chain
   não são instantâneas e têm taxas próprias, então não dá para simplesmente
   comprar em uma e transferir para vender na outra a tempo.
-- **Execução real**: ordens podem ter slippage, liquidez insuficiente no livro,
-  preenchimento parcial, ou latência entre a leitura do preço e o envio da
-  ordem — tudo isso pode transformar uma "oportunidade" de papel em perda real.
-- **Custos não modelados**: taxas de saque/rede, spread real do livro de ofertas
-  (aqui é usado bid/ask do ticker, não profundidade real) e limites de rate
-  limit das exchanges.
+- **Execução real**: mesmo com a validação por profundidade, ordens reais podem
+  ter preenchimento parcial ou latência entre a leitura do book e o envio da
+  ordem — o preço pode mudar nesse intervalo, então a validação reduz mas não
+  elimina o risco de slippage.
+- **Custos não modelados**: taxas de saque/rede e limites de rate limit das
+  exchanges.
 - **Regulatório/KYC**: operar com dinheiro real em exchanges exige contas
   verificadas e conformidade com a regulamentação local.
 
