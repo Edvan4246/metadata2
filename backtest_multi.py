@@ -539,25 +539,31 @@ ESTRATEGIAS = {
 
 # Mapa símbolo -> estratégia, separado por timeframe porque --validar-auto
 # (janela de 180 dias fora da amostra de 6 meses) deu resultados bem
-# diferentes pros candidatos testados até agora (sr_zonas/crt). A liquidez
-# (ver ESTRATEGIAS_AUTO) já entrou na ferramenta de validação e no histórico
-# completo bateu sr_zonas/crt em vários símbolos fracos (metais H1, GBPJPY
-# M5), mas ainda não foi confirmada fora da amostra — não promovida pra este
-# mapa até passar pelo --validar-auto de verdade:
+# diferentes pros candidatos testados até agora (sr_zonas/crt/liquidez).
 #
 # M5: o histórico exportado é curto (a janela de 180 dias cobre o mesmo
 # período usado pra montar este mapa, não é validação independente de
 # verdade). Mantido o roteamento por símbolo por ser a melhor informação
-# disponível, mas sem confirmação real ainda.
+# disponível, mas sem confirmação real ainda — exceto USDJPY_PERIOD_M5 (ver
+# abaixo), que tem uma janela de teste real porque o histórico desse símbolo
+# é mais longo.
 #
-# H1: o histórico é longo o bastante pra a janela de 180 dias ser de fato
-# um período diferente, e nesse teste real o roteamento por símbolo bateu
-# só 4/8 (e os vencedores reais da janela também ficaram 4-4 entre as
-# estratégias) — ou seja, escolher por símbolo no H1 não é melhor que
-# escolher ao acaso. Por isso H1 usa uma única estratégia fixa pra todos os
-# símbolos: sr_zonas, que teve o maior retorno agregado e o menor
-# drawdown/pior caso no histórico completo (uma vantagem marginal, não uma
-# confirmação forte).
+# H1: o histórico é longo o bastante pra a janela de 180 dias ser de fato um
+# período diferente. No --validar-auto de 3 vias (sr_zonas/crt/liquidez), a
+# escolha do mapa bateu 8/16 símbolos — acima do esperado por acaso com 3
+# candidatos (~33%), mas a amostra é pequena (16) pra ser uma confirmação
+# forte. A liquidez venceu fora da amostra com fator de lucro claramente
+# acima de 1.0 em 3 casos, e foi promovida só nesses: GBPJPY.c_PERIOD_H1
+# (1.41), USDJPY_PERIOD_M5 (1.13) e GBPUSD_PERIOD_H1 (1.06 — margem mais
+# fina, mas ainda positiva e melhor que as outras duas opções, que estavam
+# negativas). Onde o vencedor da janela foi sr_zonas ou crt em vez do que já
+# estava no mapa (EURUSD_PERIOD_M5, USDJPY_PERIOD_H1, XAGUSD.c_PERIOD_H1,
+# XAGUSD.c_PERIOD_M5), NÃO foi trocado — já vimos antes que escolher entre
+# sr_zonas/crt com base numa única janela de 180 dias não bate a escolha
+# original mais do que o acaso, então trocar de novo seria repetir o mesmo
+# overfitting. AUDUSD_PERIOD_H1 também não mudou: a liquidez venceu ali, mas
+# com fator de lucro 0.94 (ainda abaixo de 1.0) — nenhuma das três opções
+# mostrou edge real nesse símbolo.
 MAPA_AUTO = {
     "XAUUSD.c_PERIOD_M5": "sr_zonas",
     "GBPJPY.c_PERIOD_M5": "sr_zonas",
@@ -565,16 +571,16 @@ MAPA_AUTO = {
     "EURUSD_PERIOD_M5": "sr_zonas",
     "USDCAD_PERIOD_M5": "crt",
     "XAGUSD.c_PERIOD_M5": "crt",
-    "USDJPY_PERIOD_M5": "crt",
+    "USDJPY_PERIOD_M5": "liquidez",
     "AUDUSD_PERIOD_M5": "crt",
     "XAUUSD.c_PERIOD_H1": "sr_zonas",
     "USDCAD_PERIOD_H1": "sr_zonas",
     "XAGUSD.c_PERIOD_H1": "sr_zonas",
     "AUDUSD_PERIOD_H1": "sr_zonas",
-    "GBPUSD_PERIOD_H1": "sr_zonas",
+    "GBPUSD_PERIOD_H1": "liquidez",
     "EURUSD_PERIOD_H1": "sr_zonas",
     "USDJPY_PERIOD_H1": "sr_zonas",
-    "GBPJPY.c_PERIOD_H1": "sr_zonas",
+    "GBPJPY.c_PERIOD_H1": "liquidez",
 }
 ESTRATEGIA_AUTO_PADRAO = "sr_zonas"
 
