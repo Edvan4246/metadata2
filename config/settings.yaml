@@ -1,0 +1,33 @@
+# Configuracao do bot de arbitragem - modo padrao: PAPER TRADING (sem dinheiro real)
+exchange:
+  id: binance        # id do ccxt; nao precisa de API key/secret para dados publicos
+
+base_currency: USDT
+
+triangular:
+  enabled: true
+  # moedas alternativas usadas para montar os triangulos BASE -> X -> Y -> BASE
+  alt_currencies: [BTC, ETH, BNB, SOL, XRP, ADA, DOGE, MATIC, LTC, TRX]
+
+cross_exchange:
+  enabled: true
+  # adicione mais ids do ccxt aqui (ex: kraken, kucoin, coinbase) para ativar
+  # de fato a arbitragem entre exchanges. Com apenas 1 exchange o detector
+  # fica pronto mas nao encontra oportunidades (precisa de >= 2).
+  exchanges: [binance]
+  symbols: [BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT, XRP/USDT]
+
+risk:
+  initial_capital: 1000.0      # capital virtual inicial (paper trading)
+  max_trade_pct: 0.02          # no maximo 2% do capital por operacao
+  min_profit_pct: 0.003        # so opera se lucro liquido estimado >= 0.3%
+  max_daily_loss_pct: 0.05     # circuit breaker: trava o bot apos perder 5% do capital no dia
+  taker_fee_pct: 0.001         # taxa taker padrao (0.1%) aplicada em cada perna da operacao
+
+loop:
+  interval_seconds: 15
+
+logging:
+  level: INFO
+  trades_log_path: data/trades.csv
+  opportunities_log_path: data/opportunities.csv

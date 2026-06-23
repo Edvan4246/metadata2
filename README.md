@@ -1,0 +1,84 @@
+# Bot de Arbitragem Cripto (Paper Trading)
+
+Sistema para **detectar** oportunidades de arbitragem no mercado de criptomoedas
+(triangular e entre exchanges), com foco em **proteção de capital**. Por padrão
+o bot roda em **paper trading**: ele lê apenas dados públicos de mercado (via
+[ccxt](https://github.com/ccxt/ccxt)) e simula as execuções — nenhuma chave de
+API de negociação é usada e nenhuma ordem real é enviada.
+
+## Por que é seguro por padrão
+
+- **Sem chaves de API / sem ordens reais**: `ExchangeClient` só usa endpoints
+  públicos (`fetch_tickers`). Não há método de envio de ordem em todo o código.
+- **Capital virtual**: `RiskManager` opera sobre um saldo simulado
+  (`risk.initial_capital`), nunca toca uma conta real.
+- **Lucro líquido de taxas**: cada oportunidade já desconta a taxa taker
+  (`risk.taker_fee_pct`) em cada perna da operação antes de decidir se vale a pena.
+- **Limite de exposição por operação**: no máximo `risk.max_trade_pct` do
+  capital atual por trade.
+- **Piso mínimo de lucro**: só opera se o lucro líquido estimado for
+  `>= risk.min_profit_pct`.
+- **Circuit breaker diário**: se a perda acumulada no dia atingir
+  `risk.max_daily_loss_pct`, o bot trava novas operações até o dia seguinte.
+- **Log de tudo**: toda oportunidade detectada (`data/opportunities.csv`) e todo
+  trade simulado (`data/trades.csv`) ficam registrados para auditoria.
+
+## Instalação
+
+```bash
+pip install -r requirements.txt
+```
+
+## Configuração
+
+Edite `config/settings.yaml`:
+
+- `exchange.id`: exchange principal (id do ccxt) usada para a arbitragem triangular.
+- `triangular.alt_currencies`: moedas usadas para montar os triângulos `BASE -> X -> Y -> BASE`.
+- `cross_exchange.exchanges`: lista de exchanges (ids do ccxt) comparadas entre si.
+  Com apenas uma exchange na lista, o detector fica ativo mas nunca encontra
+  oportunidades (precisa de duas ou mais exchanges cotando o mesmo par).
+- `risk.*`: parâmetros de proteção de capital descritos acima.
+- `loop.interval_seconds`: intervalo entre cada rodada de checagem.
+
+## Uso
+
+```bash
+# loop contínuo
+python main.py
+
+# uma única iteração (útil para testes/cron)
+python main.py --once
+
+# configuração alternativa
+python main.py --config minha_config.yaml
+```
+
+## Testes
+
+```bash
+pytest
+```
+
+## Limitações importantes (leia antes de ir para produção)
+
+Este projeto é um **detector + simulador**, não um executor de ordens reais.
+Arbitragem real em cripto tem riscos que este código *não* resolve por si só:
+
+- **Capital pré-posicionado**: arbitragem entre exchanges exige ter saldo em
+  ambas as exchanges *antes* da oportunidade aparecer — transferências on-chain
+  não são instantâneas e têm taxas próprias, então não dá para simplesmente
+  comprar em uma e transferir para vender na outra a tempo.
+- **Execução real**: ordens podem ter slippage, liquidez insuficiente no livro,
+  preenchimento parcial, ou latência entre a leitura do preço e o envio da
+  ordem — tudo isso pode transformar uma "oportunidade" de papel em perda real.
+- **Custos não modelados**: taxas de saque/rede, spread real do livro de ofertas
+  (aqui é usado bid/ask do ticker, não profundidade real) e limites de rate
+  limit das exchanges.
+- **Regulatório/KYC**: operar com dinheiro real em exchanges exige contas
+  verificadas e conformidade com a regulamentação local.
+
+Antes de conectar isso a uma conta real, adicione: execução real com tratamento
+de erros e ordens parciais, verificação de profundidade do livro (não só
+bid/ask), gestão segura de chaves de API (nunca em texto puro), testes extensos
+em paper trading, e validação jurídica/fiscal.
