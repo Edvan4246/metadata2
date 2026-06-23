@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from itertools import permutations
 
 from arbitrage_bot.models import Opportunity, Ticker
+
+logger = logging.getLogger(__name__)
 
 
 def _convert(amount: float, tickers: dict[str, Ticker], from_ccy: str, to_ccy: str, fee_pct: float) -> float | None:
@@ -31,6 +34,8 @@ def find_opportunities(
 ) -> list[Opportunity]:
     """Scans BASE -> X -> Y -> BASE triangles among the given alt currencies."""
     opportunities: list[Opportunity] = []
+    best_net_profit_pct: float | None = None
+    best_description: str | None = None
 
     for x, y in permutations(alts, 2):
         amount = 1.0
@@ -47,6 +52,10 @@ def find_opportunities(
         net_profit_pct = final - 1.0
         gross_profit_pct = net_profit_pct + 3 * fee_pct  # approx fees removed
 
+        if best_net_profit_pct is None or net_profit_pct > best_net_profit_pct:
+            best_net_profit_pct = net_profit_pct
+            best_description = f"{base} -> {x} -> {y} -> {base}"
+
         if net_profit_pct > 0:
             opportunities.append(
                 Opportunity(
@@ -57,6 +66,15 @@ def find_opportunities(
                     details={"base": base, "x": x, "y": y},
                 )
             )
+
+    if best_net_profit_pct is not None:
+        logger.info(
+            "Triangular: melhor combinacao da rodada: %s | lucro liquido %.4f%%",
+            best_description,
+            best_net_profit_pct * 100,
+        )
+    else:
+        logger.info("Triangular: nenhuma combinacao computavel nesta rodada (mercados ausentes).")
 
     opportunities.sort(key=lambda o: o.net_profit_pct, reverse=True)
     return opportunities

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from arbitrage_bot.models import Opportunity, Ticker
+
+logger = logging.getLogger(__name__)
 
 
 def find_opportunities(
@@ -14,6 +18,8 @@ def find_opportunities(
     Needs at least 2 exchanges with data for a given symbol to find anything.
     """
     opportunities: list[Opportunity] = []
+    best_net_profit_pct: float | None = None
+    best_description: str | None = None
 
     for symbol in symbols:
         quotes = [
@@ -32,6 +38,13 @@ def find_opportunities(
 
         gross_profit_pct = (sell_ticker.bid - buy_ticker.ask) / buy_ticker.ask
         net_profit_pct = gross_profit_pct - 2 * fee_pct
+
+        if best_net_profit_pct is None or net_profit_pct > best_net_profit_pct:
+            best_net_profit_pct = net_profit_pct
+            best_description = (
+                f"{symbol}: comprar em {buy_exchange} @ {buy_ticker.ask} / "
+                f"vender em {sell_exchange} @ {sell_ticker.bid}"
+            )
 
         if net_profit_pct > 0:
             opportunities.append(
@@ -52,6 +65,15 @@ def find_opportunities(
                     },
                 )
             )
+
+    if best_net_profit_pct is not None:
+        logger.info(
+            "Cross-exchange: melhor spread da rodada: %s | lucro liquido %.4f%%",
+            best_description,
+            best_net_profit_pct * 100,
+        )
+    else:
+        logger.info("Cross-exchange: nenhum symbol com >=2 exchanges cotando nesta rodada.")
 
     opportunities.sort(key=lambda o: o.net_profit_pct, reverse=True)
     return opportunities
