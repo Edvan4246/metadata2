@@ -10,27 +10,31 @@ def test_validate_cross_exchange_profitable_with_enough_depth():
     buy_book = OrderBook(asks=[(19900.0, 5.0)], bids=[])
     sell_book = OrderBook(asks=[], bids=[(20100.0, 5.0)])
 
-    net = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.0)
+    fill = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.0)
 
-    assert net == pytest.approx((20100.0 - 19900.0) / 19900.0)
+    assert fill is not None
+    assert fill.net_profit_pct == pytest.approx((20100.0 - 19900.0) / 19900.0)
+    assert fill.base_amount == pytest.approx(1000.0 / 19900.0)
+    assert fill.quote_received == pytest.approx(fill.base_amount * 20100.0)
 
 
 def test_validate_cross_exchange_insufficient_depth_on_buy_side():
     buy_book = OrderBook(asks=[(19900.0, 0.001)], bids=[])
     sell_book = OrderBook(asks=[], bids=[(20100.0, 5.0)])
 
-    net = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.0)
+    fill = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.0)
 
-    assert net is None
+    assert fill is None
 
 
 def test_validate_cross_exchange_fees_can_erase_profit():
     buy_book = OrderBook(asks=[(19900.0, 5.0)], bids=[])
     sell_book = OrderBook(asks=[], bids=[(20100.0, 5.0)])
 
-    net = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.01)
+    fill = depth_check.validate_cross_exchange(buy_book, sell_book, trade_size_quote=1000.0, fee_pct=0.01)
 
-    assert net < 0
+    assert fill is not None
+    assert fill.net_profit_pct < 0
 
 
 def test_validate_triangular_profitable():

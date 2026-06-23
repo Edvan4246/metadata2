@@ -47,6 +47,8 @@ def find_opportunities(
                         "symbol": symbol,
                         "buy_exchange": buy_exchange,
                         "sell_exchange": sell_exchange,
+                        "buy_price": buy_ticker.ask,
+                        "sell_price": sell_ticker.bid,
                     },
                 )
             )

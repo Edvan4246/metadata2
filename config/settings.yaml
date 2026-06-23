@@ -16,6 +16,24 @@ cross_exchange:
   # fica pronto mas nao encontra oportunidades (precisa de >= 2).
   exchanges: [binance]
   symbols: [BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT, XRP/USDT]
+  # Capital pre-posicionado em cada exchange. Arbitragem real entre exchanges
+  # nao da tempo de transferir fundos durante a janela da oportunidade: e
+  # preciso ja ter moeda de cotacao (para comprar) E moeda base (para vender)
+  # em CADA exchange antes de operar. Sem isso configurado, trades
+  # cross-exchange ficam sem inventario para validar e nunca sao executados.
+  # Ao adicionar uma 2a exchange acima, replique este bloco para ela tambem.
+  allocation:
+    binance:
+      USDT: 500.0
+      BTC: 0.01
+      ETH: 0.1
+      SOL: 1.0
+      BNB: 0.5
+      XRP: 100.0
+  # Avisa (warning no log) quando o saldo de uma moeda numa exchange cair
+  # abaixo desta fracao do saldo inicial alocado -- sinal de que e hora de
+  # transferir fundos entre as exchanges para rebalancear.
+  rebalance_warning_pct: 0.5
 
 risk:
   initial_capital: 1000.0      # capital virtual inicial (paper trading)

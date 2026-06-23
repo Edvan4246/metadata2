@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from arbitrage_bot.models import OrderBook
+
+
+@dataclass
+class CrossExchangeFill:
+    net_profit_pct: float
+    base_amount: float
+    quote_received: float
 
 
 def validate_cross_exchange(
@@ -8,12 +17,12 @@ def validate_cross_exchange(
     sell_book: OrderBook,
     trade_size_quote: float,
     fee_pct: float,
-) -> float | None:
+) -> CrossExchangeFill | None:
     """Re-simulates an opportunity using real order book depth instead of best
     bid/ask, for a trade of `trade_size_quote` units of quote currency.
 
-    Returns the realistic net profit pct, or None if either leg's book doesn't
-    have enough depth to fill the trade without excessive slippage.
+    Returns None if either leg's book doesn't have enough depth to fill the
+    trade without excessive slippage.
     """
     bought = buy_book.fill_buy(trade_size_quote)
     if bought is None:
@@ -26,7 +35,8 @@ def validate_cross_exchange(
     quote_received, _ = sold
 
     gross_profit_pct = (quote_received - trade_size_quote) / trade_size_quote
-    return gross_profit_pct - 2 * fee_pct
+    net_profit_pct = gross_profit_pct - 2 * fee_pct
+    return CrossExchangeFill(net_profit_pct=net_profit_pct, base_amount=base_amount, quote_received=quote_received)
 
 
 def _convert_with_depth(

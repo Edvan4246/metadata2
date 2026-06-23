@@ -26,6 +26,13 @@ class CrossExchangeConfig:
     enabled: bool
     exchanges: list[str]
     symbols: list[str]
+    # Capital pre-posicionado por exchange ({exchange_id: {currency: amount}}).
+    # Sem isso, trades cross-exchange ficam sem inventario para validar (ver
+    # arbitrage_bot/balances.py) e nunca sao executados.
+    allocation: dict[str, dict[str, float]] = field(default_factory=dict)
+    # Avisa quando o saldo de uma moeda numa exchange cai abaixo desta fracao
+    # do saldo inicial alocado -- sinal de que e hora de rebalancear.
+    rebalance_warning_pct: float = 0.5
 
 
 @dataclass

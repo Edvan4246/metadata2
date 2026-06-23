@@ -29,6 +29,13 @@ API de negociação é usada e nenhuma ordem real é enviada.
   reais (`arbitrage_bot/depth_check.py`). Se a liquidez não suportar o
   tamanho do trade, a oportunidade é descartada em vez de assumir que o
   bid/ask aguenta o volume todo.
+- **Capital pré-posicionado por exchange**: para arbitragem entre exchanges, o
+  bot só negocia o quanto o `cross_exchange.allocation` de cada exchange
+  realmente suporta (`arbitrage_bot/balances.py`) — nunca assume que dá para
+  transferir fundos durante a janela da oportunidade. Cada trade desloca o
+  saldo entre as exchanges, e um aviso é logado quando alguma moeda cai abaixo
+  de `rebalance_warning_pct` do alocado, sinalizando que é hora de transferir
+  fundos manualmente para rebalancear.
 
 ## Instalação
 
@@ -45,6 +52,10 @@ Edite `config/settings.yaml`:
 - `cross_exchange.exchanges`: lista de exchanges (ids do ccxt) comparadas entre si.
   Com apenas uma exchange na lista, o detector fica ativo mas nunca encontra
   oportunidades (precisa de duas ou mais exchanges cotando o mesmo par).
+- `cross_exchange.allocation`: capital pré-posicionado em cada exchange (por
+  moeda). Sem isso, trades cross-exchange nunca são executados — ver seção
+  acima. `rebalance_warning_pct` controla quando o bot avisa que é hora de
+  transferir fundos entre exchanges.
 - `risk.*`: parâmetros de proteção de capital descritos acima.
 - `loop.interval_seconds`: intervalo entre cada rodada de checagem.
 
@@ -72,10 +83,6 @@ pytest
 Este projeto é um **detector + simulador**, não um executor de ordens reais.
 Arbitragem real em cripto tem riscos que este código *não* resolve por si só:
 
-- **Capital pré-posicionado**: arbitragem entre exchanges exige ter saldo em
-  ambas as exchanges *antes* da oportunidade aparecer — transferências on-chain
-  não são instantâneas e têm taxas próprias, então não dá para simplesmente
-  comprar em uma e transferir para vender na outra a tempo.
 - **Execução real**: mesmo com a validação por profundidade, ordens reais podem
   ter preenchimento parcial ou latência entre a leitura do book e o envio da
   ordem — o preço pode mudar nesse intervalo, então a validação reduz mas não
@@ -85,7 +92,7 @@ Arbitragem real em cripto tem riscos que este código *não* resolve por si só:
 - **Regulatório/KYC**: operar com dinheiro real em exchanges exige contas
   verificadas e conformidade com a regulamentação local.
 
-Antes de conectar isso a uma conta real, adicione: execução real com tratamento
-de erros e ordens parciais, verificação de profundidade do livro (não só
-bid/ask), gestão segura de chaves de API (nunca em texto puro), testes extensos
-em paper trading, e validação jurídica/fiscal.
+Antes de conectar isso a uma conta real, adicione: execução real com
+tratamento de erros e ordens parciais, gestão segura de chaves de API (nunca
+em texto puro), depósitos reais que correspondam ao `allocation` configurado,
+testes extensos em paper trading, e validação jurídica/fiscal.

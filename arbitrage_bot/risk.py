@@ -46,8 +46,13 @@ class RiskManager:
             self.daily_pnl = 0.0
             self.trading_halted = False
 
-    def evaluate(self, opportunity: Opportunity) -> float | None:
-        """Returns the approved trade size (in base currency) or None if rejected."""
+    def evaluate(self, opportunity: Opportunity, candidate_trade_size: float | None = None) -> float | None:
+        """Returns the approved trade size (in base currency) or None if rejected.
+
+        `candidate_trade_size`, when given, is already capped by upstream
+        checks (order book depth, pre-positioned inventory) and is never
+        exceeded here -- only further capped by max_trade_pct of capital.
+        """
         self._roll_day_if_needed()
 
         if self.trading_halted:
@@ -55,7 +60,8 @@ class RiskManager:
         if opportunity.net_profit_pct < self.min_profit_pct:
             return None
 
-        trade_size = self.capital * self.max_trade_pct
+        max_size = self.capital * self.max_trade_pct
+        trade_size = max_size if candidate_trade_size is None else min(candidate_trade_size, max_size)
         return trade_size if trade_size > 0 else None
 
     def record_pnl(self, pnl_base: float) -> None:

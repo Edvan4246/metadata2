@@ -16,6 +16,11 @@ cross_exchange:
   enabled: true
   exchanges: [binance, kraken]
   symbols: [BTC/USDT, ETH/USDT]
+  allocation:
+    binance:
+      USDT: 100.0
+      BTC: 0.01
+  rebalance_warning_pct: 0.4
 
 risk:
   initial_capital: 500.0
@@ -44,6 +49,8 @@ def test_settings_load(tmp_path):
     assert settings.base_currency == "USDT"
     assert settings.triangular.alt_currencies == ["BTC", "ETH"]
     assert settings.cross_exchange.exchanges == ["binance", "kraken"]
+    assert settings.cross_exchange.allocation == {"binance": {"USDT": 100.0, "BTC": 0.01}}
+    assert settings.cross_exchange.rebalance_warning_pct == 0.4
     assert settings.risk.initial_capital == 500.0
     assert settings.interval_seconds == 10
     assert settings.logging.level == "INFO"
