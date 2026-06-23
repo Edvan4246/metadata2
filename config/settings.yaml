@@ -11,24 +11,28 @@ triangular:
 
 cross_exchange:
   enabled: true
-  # adicione mais ids do ccxt aqui (ex: kraken, kucoin, coinbase) para ativar
-  # de fato a arbitragem entre exchanges. Com apenas 1 exchange o detector
-  # fica pronto mas nao encontra oportunidades (precisa de >= 2).
-  exchanges: [binance]
-  symbols: [BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT, XRP/USDT]
+  # com >= 2 exchanges o detector passa a comparar precos de fato.
+  # BNB/USDT nao existe na Kraken, entao foi removido dos symbols abaixo
+  # (ExchangeClient.has_symbol filtraria sozinho, mas evita ruido no log).
+  exchanges: [binance, kraken]
+  symbols: [BTC/USDT, ETH/USDT, SOL/USDT, XRP/USDT]
   # Capital pre-posicionado em cada exchange. Arbitragem real entre exchanges
   # nao da tempo de transferir fundos durante a janela da oportunidade: e
   # preciso ja ter moeda de cotacao (para comprar) E moeda base (para vender)
   # em CADA exchange antes de operar. Sem isso configurado, trades
   # cross-exchange ficam sem inventario para validar e nunca sao executados.
-  # Ao adicionar uma 2a exchange acima, replique este bloco para ela tambem.
   allocation:
     binance:
       USDT: 500.0
       BTC: 0.01
       ETH: 0.1
       SOL: 1.0
-      BNB: 0.5
+      XRP: 100.0
+    kraken:
+      USDT: 500.0
+      BTC: 0.01
+      ETH: 0.1
+      SOL: 1.0
       XRP: 100.0
   # Avisa (warning no log) quando o saldo de uma moeda numa exchange cair
   # abaixo desta fracao do saldo inicial alocado -- sinal de que e hora de
