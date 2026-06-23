@@ -467,6 +467,24 @@ CONFIANCA = {
 }
 CONFIANCA_PADRAO = "sem_edge"
 
+# Unidades por 1.0 lote, usado só no modo --lote (posição de tamanho fixo).
+# Forex padrão é 100.000 unidades; metais variam por corretora — os valores
+# abaixo são os mais comuns (XAUUSD 100 oz, XAGUSD 5.000 oz por lote), mas
+# confira a especificação do símbolo no MT5 (Market Watch > símbolo >
+# Especificação > "Tamanho do contrato") caso sua corretora use outro valor.
+CONTRATO_POR_LOTE = {
+    "XAUUSD": 100,
+    "XAGUSD": 5000,
+}
+CONTRATO_POR_LOTE_PADRAO = 100000
+
+
+def unidades_por_lote(simbolo):
+    base = simbolo.split("_PERIOD_")[0]
+    if base.lower().endswith(".c"):
+        base = base[:-2]
+    return CONTRATO_POR_LOTE.get(base.upper(), CONTRATO_POR_LOTE_PADRAO)
+
 
 def aplicar_estrategia_por_nome(df, nome, args):
     aplicar = ESTRATEGIAS[nome]
@@ -491,7 +509,7 @@ def aplicar_estrategia_por_nome(df, nome, args):
     return aplicar(df)
 
 
-def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital_inicial):
+def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital_inicial, qty_fixa=None):
     df = df.reset_index(drop=True)
     equity = capital_inicial
     pico_equity = capital_inicial
@@ -560,8 +578,12 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
         if risco_distancia <= 0:
             continue
 
-        risco_valor = equity * (risco_pct / 100)
-        qty = risco_valor / risco_distancia
+        if qty_fixa is not None:
+            qty = qty_fixa
+            risco_valor = risco_distancia * qty
+        else:
+            risco_valor = equity * (risco_pct / 100)
+            qty = risco_valor / risco_distancia
 
         posicao = {
             "tipo": "compra" if compra_forte else "venda",
@@ -705,6 +727,12 @@ def main():
                          help="simula só os últimos N dias do histórico (ex.: 30 para 1 mês). "
                               "Os indicadores ainda usam todo o histórico carregado, só a simulação é recortada")
     parser.add_argument("--risco-pct", type=float, default=1.0)
+    parser.add_argument("--lote", type=float, default=None,
+                         help="simula com lote fixo (ex.: 0.10) em vez de % de risco por trade. "
+                              "Tamanho de posição não acompanha o saldo da conta, igual numa conta real "
+                              "operando lote fixo. Tamanho do contrato por unidade de lote em CONTRATO_POR_LOTE "
+                              "(100.000 p/ forex, 100 oz p/ XAUUSD, 5.000 oz p/ XAGUSD — confira no MT5 se sua "
+                              "corretora usa outro valor). Ignora --risco-pct quando definido")
     parser.add_argument("--custo-pct-risco", type=float, default=5.0,
                          help="custo (comissão) por trade, como %% do valor arriscado na operação")
     parser.add_argument("--slippage-pct-risco", type=float, default=2.0,
@@ -767,7 +795,8 @@ def main():
             df = aplicar_estrategia_por_nome(df, nome_estrategia, args)
             if args.dias is not None:
                 df = filtrar_ultimos_dias(df, args.dias)
-            resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial)
+            qty_fixa = args.lote * unidades_por_lote(simbolo) if args.lote is not None else None
+            resultado = backtest_simbolo(df, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial, qty_fixa=qty_fixa)
             resultado["simbolo"] = simbolo
             resultado["estrategia"] = nome_estrategia
             resultado["confianca"] = CONFIANCA.get(simbolo, CONFIANCA_PADRAO)
