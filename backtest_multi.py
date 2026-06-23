@@ -537,9 +537,13 @@ ESTRATEGIAS = {
     "liquidez": aplicar_estrategia_liquidez,
 }
 
-# Mapa símbolo -> estratégia (sr_zonas ou crt), separado por timeframe porque
-# --validar-auto (janela de 180 dias fora da amostra de 6 meses) deu
-# resultados bem diferentes pros dois:
+# Mapa símbolo -> estratégia, separado por timeframe porque --validar-auto
+# (janela de 180 dias fora da amostra de 6 meses) deu resultados bem
+# diferentes pros candidatos testados até agora (sr_zonas/crt). A liquidez
+# (ver ESTRATEGIAS_AUTO) já entrou na ferramenta de validação e no histórico
+# completo bateu sr_zonas/crt em vários símbolos fracos (metais H1, GBPJPY
+# M5), mas ainda não foi confirmada fora da amostra — não promovida pra este
+# mapa até passar pelo --validar-auto de verdade:
 #
 # M5: o histórico exportado é curto (a janela de 180 dias cobre o mesmo
 # período usado pra montar este mapa, não é validação independente de
@@ -777,15 +781,24 @@ def backtest_simbolo(df, risco_pct, custo_pct_risco, slippage_pct_risco, capital
     }
 
 
+# Estratégias candidatas ao roteamento automático (MAPA_AUTO) e à validação
+# fora da amostra (--validar-auto). Acrescentar um nome aqui já é suficiente
+# pra ele entrar na comparação de --validar-auto; só não muda o MAPA_AUTO em
+# si, que continua sendo decidido manualmente a partir do resultado real do
+# teste.
+ESTRATEGIAS_AUTO = ("sr_zonas", "crt", "liquidez")
+ABREV_AUTO = {"sr_zonas": "sr", "crt": "crt", "liquidez": "liq"}
+
+
 def _fator_lucro_ordenavel(fator_lucro):
     return float("inf") if isinstance(fator_lucro, str) else fator_lucro
 
 
 def validar_mapa_auto(arquivos, args):
-    """Roda sr_zonas e crt, separadamente, só na janela mais recente
-    (args.dias_teste, fora da amostra usada pra montar o MAPA_AUTO) e
-    compara qual teria vencido nesse período contra o que está fixado no
-    mapa. Serve pra checar se a escolha por símbolo é robusta ou só
+    """Roda cada estratégia de ESTRATEGIAS_AUTO, separadamente, só na janela
+    mais recente (args.dias_teste, fora da amostra usada pra montar o
+    MAPA_AUTO) e compara qual teria vencido nesse período contra o que está
+    fixado no mapa. Serve pra checar se a escolha por símbolo é robusta ou só
     ajuste ao período usado para decidir."""
     linhas = []
     for caminho in arquivos:
@@ -798,22 +811,16 @@ def validar_mapa_auto(arquivos, args):
                 continue
 
             resultados_periodo = {}
-            for nome in ("sr_zonas", "crt"):
+            for nome in ESTRATEGIAS_AUTO:
                 df_aplicado = aplicar_estrategia_por_nome(df_teste.copy(), nome, args)
                 resultados_periodo[nome] = backtest_simbolo(
                     df_aplicado, args.risco_pct, args.custo_pct_risco, args.slippage_pct_risco, args.capital_inicial
                 )
 
-            fl_sr = resultados_periodo["sr_zonas"]["fator_lucro"]
-            fl_crt = resultados_periodo["crt"]["fator_lucro"]
-            sr_val = _fator_lucro_ordenavel(fl_sr)
-            crt_val = _fator_lucro_ordenavel(fl_crt)
-            if sr_val > crt_val:
-                vencedor_periodo = "sr_zonas"
-            elif crt_val > sr_val:
-                vencedor_periodo = "crt"
-            else:
-                vencedor_periodo = "empate"
+            valores = {nome: _fator_lucro_ordenavel(resultados_periodo[nome]["fator_lucro"]) for nome in ESTRATEGIAS_AUTO}
+            melhor_valor = max(valores.values())
+            vencedores = [nome for nome, v in valores.items() if v == melhor_valor]
+            vencedor_periodo = vencedores[0] if len(vencedores) == 1 else "empate"
 
             estrategia_mapa = MAPA_AUTO.get(simbolo, ESTRATEGIA_AUTO_PADRAO)
             if vencedor_periodo == "empate":
@@ -821,16 +828,15 @@ def validar_mapa_auto(arquivos, args):
             else:
                 bateu = "sim" if vencedor_periodo == estrategia_mapa else "nao"
 
-            linhas.append({
-                "simbolo": simbolo,
-                "trades_sr": resultados_periodo["sr_zonas"]["trades"],
-                "fl_sr": fl_sr,
-                "trades_crt": resultados_periodo["crt"]["trades"],
-                "fl_crt": fl_crt,
-                "estrategia_mapa": estrategia_mapa,
-                "vencedor_periodo": vencedor_periodo,
-                "bateu_mapa": bateu,
-            })
+            linha = {"simbolo": simbolo}
+            for nome in ESTRATEGIAS_AUTO:
+                abv = ABREV_AUTO[nome]
+                linha[f"trades_{abv}"] = resultados_periodo[nome]["trades"]
+                linha[f"fl_{abv}"] = resultados_periodo[nome]["fator_lucro"]
+            linha["estrategia_mapa"] = estrategia_mapa
+            linha["vencedor_periodo"] = vencedor_periodo
+            linha["bateu_mapa"] = bateu
+            linhas.append(linha)
         except Exception as e:
             print(f"Erro ao validar {simbolo}: {e}")
     return linhas
@@ -859,7 +865,7 @@ def main():
     parser.add_argument("--data-dir", required=True, help="pasta com um CSV por símbolo")
     parser.add_argument("--estrategia", choices=sorted(list(ESTRATEGIAS) + ["auto"]), default="sniper",
                          help="lógica de entrada/saída a testar. 'auto' escolhe por símbolo entre "
-                              "sr_zonas/crt conforme o MAPA_AUTO (melhor fator de lucro observado)")
+                              "sr_zonas/crt/liquidez conforme o MAPA_AUTO (melhor fator de lucro observado)")
     parser.add_argument("--ema-rapida", type=int, default=9)
     parser.add_argument("--ema-lenta", type=int, default=21)
     parser.add_argument("--rsi-periodo", type=int, default=14)
@@ -908,7 +914,7 @@ def main():
                          help="slippage na saída, como %% da distância entrada-stop da operação")
     parser.add_argument("--capital-inicial", type=float, default=1000.0)
     parser.add_argument("--validar-auto", action="store_true",
-                         help="em vez de simular, testa se o MAPA_AUTO (sr_zonas vs crt por símbolo) "
+                         help="em vez de simular, testa se o MAPA_AUTO (sr_zonas vs crt vs liquidez por símbolo) "
                               "se confirma numa janela recente fora da amostra usada pra montá-lo")
     parser.add_argument("--dias-teste", type=float, default=180,
                          help="[--validar-auto] tamanho da janela recente (em dias) usada como teste fora da amostra; padrão 180 (~6 meses)")
@@ -938,7 +944,11 @@ def main():
             print("Nenhum resultado gerado.")
             return
         print(f"Validação do MAPA_AUTO nos últimos {args.dias_teste:g} dias (capital inicial ${args.capital_inicial:g})\n")
-        colunas = ["simbolo", "trades_sr", "fl_sr", "trades_crt", "fl_crt", "estrategia_mapa", "vencedor_periodo", "bateu_mapa"]
+        colunas = ["simbolo"]
+        for nome in ESTRATEGIAS_AUTO:
+            abv = ABREV_AUTO[nome]
+            colunas += [f"trades_{abv}", f"fl_{abv}"]
+        colunas += ["estrategia_mapa", "vencedor_periodo", "bateu_mapa"]
         largura = {c: max(len(c), max(len(str(r[c])) for r in linhas)) for c in colunas}
         cabecalho = " | ".join(c.ljust(largura[c]) for c in colunas)
         print(cabecalho)
