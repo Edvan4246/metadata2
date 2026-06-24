@@ -58,7 +58,34 @@ class ArbitrageBot:
         )
 
         exchange_ids = sorted(set(settings.cross_exchange.exchanges) | {settings.exchange_id})
-        self.clients = {eid: ExchangeClient(eid) for eid in exchange_ids}
+        self.clients = {}
+        failed_exchanges = []
+        for eid in exchange_ids:
+            try:
+                self.clients[eid] = ExchangeClient(eid)
+            except Exception:
+                logger.exception(
+                    "Falha ao conectar na exchange '%s', ela sera ignorada nesta sessao.", eid
+                )
+                failed_exchanges.append(eid)
+
+        if settings.exchange_id in failed_exchanges:
+            raise RuntimeError(
+                f"Exchange primaria '{settings.exchange_id}' falhou ao conectar; "
+                "nao e possivel continuar sem ela."
+            )
+
+        if failed_exchanges:
+            settings = replace(
+                settings,
+                cross_exchange=replace(
+                    settings.cross_exchange,
+                    exchanges=[
+                        eid for eid in settings.cross_exchange.exchanges if eid not in failed_exchanges
+                    ],
+                ),
+            )
+            self.settings = settings
 
         self.risk_manager = RiskManager(
             initial_capital=settings.risk.initial_capital,
