@@ -14,7 +14,7 @@ cross_exchange:
   # com >= 2 exchanges o detector passa a comparar precos de fato.
   # BNB/USDT nao existe na Kraken, entao foi removido dos symbols abaixo
   # (ExchangeClient.has_symbol filtraria sozinho, mas evita ruido no log).
-  exchanges: [binance, kraken]
+  exchanges: [binance, kraken, kucoin]
   symbols: [BTC/USDT, ETH/USDT, SOL/USDT, XRP/USDT]
   # Capital pre-posicionado em cada exchange. Arbitragem real entre exchanges
   # nao da tempo de transferir fundos durante a janela da oportunidade: e
@@ -29,6 +29,12 @@ cross_exchange:
       SOL: 1.0
       XRP: 100.0
     kraken:
+      USDT: 500.0
+      BTC: 0.01
+      ETH: 0.1
+      SOL: 1.0
+      XRP: 100.0
+    kucoin:
       USDT: 500.0
       BTC: 0.01
       ETH: 0.1
