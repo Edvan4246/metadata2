@@ -19,7 +19,13 @@ class ExchangeClient:
     def __init__(self, exchange_id: str):
         self.exchange_id = exchange_id
         exchange_class = getattr(ccxt, exchange_id)
-        self.exchange = exchange_class({"enableRateLimit": True})
+        # O bot so negocia pares spot. Sem isso, exchanges como a binance
+        # tambem buscam mercados de futuros/opcoes (fapi/dapi) em load_markets(),
+        # o que e lento/desnecessario e pode ficar bloqueado ou travar a conexao
+        # dependendo da rede do usuario.
+        self.exchange = exchange_class(
+            {"enableRateLimit": True, "options": {"fetchMarkets": ["spot"]}}
+        )
         self.exchange.load_markets()
 
     def has_symbol(self, symbol: str) -> bool:
