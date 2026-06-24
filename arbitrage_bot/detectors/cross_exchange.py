@@ -27,6 +27,13 @@ def find_opportunities(
             for exchange_id, data in exchange_tickers.items()
             if symbol in data
         ]
+        if quotes:
+            logger.debug(
+                "Cross-exchange: %s cotado em %s",
+                symbol,
+                ", ".join(f"{eid}(bid={t.bid} ask={t.ask})" for eid, t in quotes),
+            )
+
         if len(quotes) < 2:
             continue
 
