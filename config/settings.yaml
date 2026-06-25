@@ -48,7 +48,7 @@ cross_exchange:
 risk:
   initial_capital: 1000.0      # capital virtual inicial (paper trading)
   max_trade_pct: 0.02          # no maximo 2% do capital por operacao
-  min_profit_pct: 0.003        # so opera se lucro liquido estimado >= 0.3%
+  min_profit_pct: 0.0001       # TEMPORARIO p/ testar execucao (0.01%, era 0.3%) -- voltar p/ 0.003 depois do teste
   max_daily_loss_pct: 0.05     # circuit breaker: trava o bot apos perder 5% do capital no dia
   taker_fee_pct: 0.001         # taxa taker padrao (0.1%) aplicada em cada perna da operacao
 
