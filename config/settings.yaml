@@ -53,7 +53,12 @@ risk:
   taker_fee_pct: 0.001         # taxa taker padrao (0.1%) aplicada em cada perna da operacao
 
 loop:
-  interval_seconds: 15
+  # 15s anteriormente. Reduzido para detectar oportunidades antes que fechem
+  # (cada rodada faz so 1 chamada fetch_tickers por exchange, entao a baixo
+  # interval_seconds nao deve violar rate limit -- a kraken e a mais restrita,
+  # com 1 req/s atraves do proprio limitador do ccxt). Se aparecerem erros de
+  # rate limit/ban temporario no log, aumente este valor de volta.
+  interval_seconds: 5
 
 logging:
   level: INFO
